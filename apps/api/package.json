@@ -7,6 +7,8 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
+    "start:worker": "ts-node -r tsconfig-paths/register src/worker/main.ts",
+    "start:worker:prod": "node dist/worker/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "docker compose -f ../../docker-compose.yml up -d postgres redis && node scripts/wait-for-postgres.js && node scripts/wait-for-redis.js && jest --config test/jest-e2e.json --runInBand",
     "seed": "ts-node -r tsconfig-paths/register src/seed/seed.ts",

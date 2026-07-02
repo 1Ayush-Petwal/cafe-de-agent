@@ -10,6 +10,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { CafeTable } from '../entities/cafe-table.entity';
+import { NotificationJob } from '../entities/notification-job.entity';
 import { Payment } from '../entities/payment.entity';
 import { ReservationStatus } from '../entities/reservation-status.enum';
 import { Reservation } from '../entities/reservation.entity';
@@ -245,6 +246,18 @@ export class ReservationsService {
           }),
         );
         await manager.save(Payment, manager.create(Payment, { reservationId: reservation.id }));
+        // Transactional outbox (issue #6): the notify job commits atomically
+        // with the booking, so a confirmed reservation can never end up
+        // without one — the worker (a separate process) drains this queue
+        // independently, so a notifier outage never slows or fails a booking.
+        await manager.save(
+          NotificationJob,
+          manager.create(NotificationJob, {
+            reservationId: reservation.id,
+            userId,
+            message: `Reservation confirmed: table ${dto.tableId}, slot ${dto.slotId}.`,
+          }),
+        );
         return reservation;
       });
     } catch (err) {
