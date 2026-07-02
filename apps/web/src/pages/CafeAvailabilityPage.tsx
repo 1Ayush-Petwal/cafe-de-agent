@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ApiError, api, TableAvailabilityDto } from '../api/client';
+import { ApiError, HoldDto, api, TableAvailabilityDto } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 
 function todayIso(): string {
@@ -19,7 +19,10 @@ export function CafeAvailabilityPage() {
   const [tables, setTables] = useState<TableAvailabilityDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [booking, setBooking] = useState<string | null>(null);
+  const [holding, setHolding] = useState<string | null>(null);
+  const [hold, setHold] = useState<HoldDto | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [confirming, setConfirming] = useState(false);
 
   const load = useCallback(() => {
     if (!cafeId) return;
@@ -35,20 +38,56 @@ export function CafeAvailabilityPage() {
     load();
   }, [load]);
 
-  const handleBook = async (tableId: string, slotId: string) => {
+  // Countdown ticker for the active hold; once it hits zero the hold has
+  // expired server-side too (Redis TTL), so drop it and refresh the grid.
+  useEffect(() => {
+    if (!hold) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.round((new Date(hold.expiresAt).getTime() - Date.now()) / 1000));
+      setSecondsLeft(remaining);
+      if (remaining === 0) {
+        setHold(null);
+        setError('Your hold expired — please try again');
+        load();
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [hold, load]);
+
+  const handleHold = async (tableId: string, slotId: string) => {
     if (!isAuthenticated) {
       navigate('/login');
       return;
     }
     setError(null);
-    setBooking(`${tableId}:${slotId}`);
+    setHolding(`${tableId}:${slotId}`);
     try {
-      await api.book(tableId, slotId);
+      const newHold = await api.hold(tableId, slotId);
+      setHold(newHold);
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not book that slot');
+      setError(err instanceof ApiError ? err.message : 'Could not hold that slot');
     } finally {
-      setBooking(null);
+      setHolding(null);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!hold) return;
+    setConfirming(true);
+    setError(null);
+    try {
+      await api.confirmHold(hold.holdId, hold.tableId, hold.slotId);
+      setHold(null);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not confirm that booking');
+      setHold(null);
+      load();
+    } finally {
+      setConfirming(false);
     }
   };
 
@@ -60,6 +99,16 @@ export function CafeAvailabilityPage() {
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </label>
       {error && <p className="error">{error}</p>}
+      {hold && (
+        <div className="hold-banner">
+          <span>
+            Table held — confirm within <strong>{secondsLeft}s</strong>
+          </span>
+          <button disabled={confirming} onClick={handleConfirm}>
+            {confirming ? '…' : 'Confirm booking'}
+          </button>
+        </div>
+      )}
       {loading ? (
         <p>Loading…</p>
       ) : (
@@ -82,10 +131,10 @@ export function CafeAvailabilityPage() {
                   <td key={slot.slotId}>
                     {slot.available ? (
                       <button
-                        disabled={booking === `${table.tableId}:${slot.slotId}`}
-                        onClick={() => handleBook(table.tableId, slot.slotId)}
+                        disabled={!!hold || holding === `${table.tableId}:${slot.slotId}`}
+                        onClick={() => handleHold(table.tableId, slot.slotId)}
                       >
-                        {booking === `${table.tableId}:${slot.slotId}` ? '…' : 'Book'}
+                        {holding === `${table.tableId}:${slot.slotId}` ? '…' : 'Book'}
                       </button>
                     ) : (
                       <span className="unavailable">Taken</span>

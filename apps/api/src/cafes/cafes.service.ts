@@ -6,6 +6,7 @@ import { Cafe } from '../entities/cafe.entity';
 import { ReservationStatus } from '../entities/reservation-status.enum';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
+import { HoldsService } from '../holds/holds.service';
 
 export interface AvailabilitySlot {
   slotId: string;
@@ -27,6 +28,7 @@ export class CafesService {
     @InjectRepository(CafeTable) private readonly tables: Repository<CafeTable>,
     @InjectRepository(Slot) private readonly slots: Repository<Slot>,
     @InjectRepository(Reservation) private readonly reservations: Repository<Reservation>,
+    private readonly holds: HoldsService,
   ) {}
 
   findAll(): Promise<Cafe[]> {
@@ -66,7 +68,10 @@ export class CafesService {
 
     const tableIds = tables.map((t) => t.id);
     const slotIds = daySlots.map((s) => s.id);
-    const booked = await this.reservationsFor(tableIds, slotIds);
+    const [booked, held] = await Promise.all([
+      this.reservationsFor(tableIds, slotIds),
+      this.holds.getHeldPairs(tableIds, slotIds),
+    ]);
     const bookedKeys = new Set(booked.map((r) => `${r.tableId}:${r.slotId}`));
 
     return tables.map((table) => ({
@@ -76,7 +81,7 @@ export class CafesService {
       slots: daySlots.map((slot) => ({
         slotId: slot.id,
         slotTime: slot.slotTime,
-        available: !bookedKeys.has(`${table.id}:${slot.id}`),
+        available: !bookedKeys.has(`${table.id}:${slot.id}`) && !held.has(`${table.id}:${slot.id}`),
       })),
     }));
   }

@@ -8,9 +8,9 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "docker compose -f ../../docker-compose.yml up -d postgres && node scripts/wait-for-postgres.js && jest --config test/jest-e2e.json --runInBand",
+    "test": "docker compose -f ../../docker-compose.yml up -d postgres redis && node scripts/wait-for-postgres.js && node scripts/wait-for-redis.js && jest --config test/jest-e2e.json --runInBand",
     "seed": "ts-node -r tsconfig-paths/register src/seed/seed.ts",
-    "benchmark:locking": "docker compose -f ../../docker-compose.yml up -d postgres && node scripts/wait-for-postgres.js && ts-node -r tsconfig-paths/register scripts/benchmark-locking.ts"
+    "benchmark:locking": "docker compose -f ../../docker-compose.yml up -d postgres redis && node scripts/wait-for-postgres.js && node scripts/wait-for-redis.js && ts-node -r tsconfig-paths/register scripts/benchmark-locking.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
@@ -23,6 +23,7 @@
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "ioredis": "^5.11.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.13.1",

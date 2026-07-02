@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  GoneException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -10,12 +11,16 @@ import { CafeTable } from '../entities/cafe-table.entity';
 import { ReservationStatus } from '../entities/reservation-status.enum';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
+import { Hold, HoldsService } from '../holds/holds.service';
 import { BookingStrategy } from './booking-strategy.enum';
+import { ConfirmHoldDto } from './dto/confirm-hold.dto';
+import { CreateHoldDto } from './dto/create-hold.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 
 const TAKEN_MESSAGE = 'This table is already booked for that slot';
 const UNIQUE_VIOLATION = '23505';
 const OPTIMISTIC_MAX_ATTEMPTS = 10;
+const DEFAULT_HOLD_TTL_SECONDS = 90;
 
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof QueryFailedError && (err as unknown as { code?: string }).code === UNIQUE_VIOLATION;
@@ -23,12 +28,17 @@ function isUniqueViolation(err: unknown): boolean {
 
 @Injectable()
 export class ReservationsService {
+  private readonly holdTtlSeconds: number;
+
   constructor(
     @InjectRepository(Reservation) private readonly reservations: Repository<Reservation>,
     @InjectRepository(CafeTable) private readonly tables: Repository<CafeTable>,
     @InjectRepository(Slot) private readonly slots: Repository<Slot>,
     private readonly dataSource: DataSource,
-  ) {}
+    private readonly holds: HoldsService,
+  ) {
+    this.holdTtlSeconds = Number(process.env.HOLD_TTL_SECONDS) || DEFAULT_HOLD_TTL_SECONDS;
+  }
 
   /**
    * M1 (issue #3): check-and-reserve is now atomic. Three switchable
@@ -162,6 +172,65 @@ export class ReservationsService {
       }
     }
     throw new ConflictException(TAKEN_MESSAGE);
+  }
+
+  /**
+   * M2 (issue #4): starting checkout takes a Redis `SET NX EX` hold instead
+   * of a long DB transaction — it survives across the HTTP requests a real
+   * checkout spans and auto-releases if the customer abandons it.
+   */
+  async hold(userId: string, dto: CreateHoldDto): Promise<Hold> {
+    const table = await this.tables.findOne({ where: { id: dto.tableId } });
+    if (!table) {
+      throw new NotFoundException('Table not found');
+    }
+    const slot = await this.slots.findOne({ where: { id: dto.slotId } });
+    if (!slot || slot.cafeId !== table.cafeId) {
+      throw new NotFoundException('Slot not found for this table');
+    }
+
+    const existing = await this.reservations.findOne({
+      where: { tableId: dto.tableId, slotId: dto.slotId, status: ReservationStatus.BOOKED },
+    });
+    if (existing) {
+      throw new ConflictException(TAKEN_MESSAGE);
+    }
+
+    const hold = await this.holds.create(userId, dto.tableId, dto.slotId, this.holdTtlSeconds);
+    if (!hold) {
+      throw new ConflictException('This table is already held for that slot');
+    }
+    return hold;
+  }
+
+  /**
+   * Confirm re-validates hold ownership atomically (check-and-delete via a
+   * Lua script) before writing to Postgres — the nasty last-second-expiry
+   * race the Roadmap calls out: if the hold expired and someone else
+   * re-held the slot in the gap, the token no longer matches and this
+   * fails cleanly instead of confirming a slot we no longer own.
+   */
+  async confirmHold(userId: string, dto: ConfirmHoldDto): Promise<Reservation> {
+    const consumed = await this.holds.consume(userId, dto.tableId, dto.slotId, dto.holdId);
+    if (!consumed) {
+      throw new GoneException('Your hold expired or was already used — please try again');
+    }
+
+    try {
+      return await this.reservations.save(
+        this.reservations.create({
+          userId,
+          tableId: dto.tableId,
+          slotId: dto.slotId,
+          status: ReservationStatus.BOOKED,
+        }),
+      );
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException(TAKEN_MESSAGE);
+      }
+      throw err;
+    }
   }
 
   findMine(userId: string): Promise<Reservation[]> {

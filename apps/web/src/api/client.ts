@@ -77,6 +77,13 @@ export interface ReservationDto {
   slot: { id: string; slotTime: string };
 }
 
+export interface HoldDto {
+  holdId: string;
+  tableId: string;
+  slotId: string;
+  expiresAt: string;
+}
+
 export const api = {
   signup: (email: string, password: string) =>
     request<AuthResponse>('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
@@ -85,8 +92,13 @@ export const api = {
   listCafes: () => request<CafeDto[]>('/cafes'),
   getAvailability: (cafeId: string, date: string) =>
     request<TableAvailabilityDto[]>(`/cafes/${cafeId}/availability?date=${date}`),
-  book: (tableId: string, slotId: string) =>
-    request<ReservationDto>('/reservations', { method: 'POST', body: JSON.stringify({ tableId, slotId }) }),
+  hold: (tableId: string, slotId: string) =>
+    request<HoldDto>('/reservations/hold', { method: 'POST', body: JSON.stringify({ tableId, slotId }) }),
+  confirmHold: (holdId: string, tableId: string, slotId: string) =>
+    request<ReservationDto>('/reservations/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ holdId, tableId, slotId }),
+    }),
   myReservations: () => request<ReservationDto[]>('/reservations/mine'),
   cancel: (id: string) => request<void>(`/reservations/${id}`, { method: 'DELETE' }),
 };
