@@ -1,4 +1,5 @@
-import { IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { BookingStrategy } from '../booking-strategy.enum';
 
 export class CreateReservationDto {
   @IsUUID()
@@ -6,4 +7,9 @@ export class CreateReservationDto {
 
   @IsUUID()
   slotId!: string;
+
+  /** Defaults to `unique` in the service. Exists for the M1 strategy comparison. */
+  @IsOptional()
+  @IsEnum(BookingStrategy)
+  strategy?: BookingStrategy;
 }

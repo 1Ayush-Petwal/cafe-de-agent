@@ -9,7 +9,8 @@
     "start:prod": "node dist/main",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "docker compose -f ../../docker-compose.yml up -d postgres && node scripts/wait-for-postgres.js && jest --config test/jest-e2e.json --runInBand",
-    "seed": "ts-node -r tsconfig-paths/register src/seed/seed.ts"
+    "seed": "ts-node -r tsconfig-paths/register src/seed/seed.ts",
+    "benchmark:locking": "docker compose -f ../../docker-compose.yml up -d postgres && node scripts/wait-for-postgres.js && ts-node -r tsconfig-paths/register scripts/benchmark-locking.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

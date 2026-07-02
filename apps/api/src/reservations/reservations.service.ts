@@ -5,12 +5,21 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { ReservationStatus } from '../entities/reservation-status.enum';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
+import { BookingStrategy } from './booking-strategy.enum';
 import { CreateReservationDto } from './dto/create-reservation.dto';
+
+const TAKEN_MESSAGE = 'This table is already booked for that slot';
+const UNIQUE_VIOLATION = '23505';
+const OPTIMISTIC_MAX_ATTEMPTS = 10;
+
+function isUniqueViolation(err: unknown): boolean {
+  return err instanceof QueryFailedError && (err as unknown as { code?: string }).code === UNIQUE_VIOLATION;
+}
 
 @Injectable()
 export class ReservationsService {
@@ -18,40 +27,141 @@ export class ReservationsService {
     @InjectRepository(Reservation) private readonly reservations: Repository<Reservation>,
     @InjectRepository(CafeTable) private readonly tables: Repository<CafeTable>,
     @InjectRepository(Slot) private readonly slots: Repository<Slot>,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
-   * M0: deliberately naive check-then-insert. Two concurrent requests can
-   * both pass the "is it free?" check and both insert — that TOCTOU race is
-   * the reason M1 exists; do not fix it here.
+   * M1 (issue #3): check-and-reserve is now atomic. Three switchable
+   * strategies close the M0 TOCTOU race (naive check-then-insert let
+   * concurrent requests both pass the "is it free?" check and both insert).
+   * `unique` is the default; the partial unique index on the reservations
+   * table (see entity) is also a permanent backstop under the other two.
    */
   async book(userId: string, dto: CreateReservationDto): Promise<Reservation> {
-    const [table, slot] = await Promise.all([
-      this.tables.findOne({ where: { id: dto.tableId } }),
-      this.slots.findOne({ where: { id: dto.slotId } }),
-    ]);
+    const table = await this.tables.findOne({ where: { id: dto.tableId } });
     if (!table) {
       throw new NotFoundException('Table not found');
     }
+    const slot = await this.slots.findOne({ where: { id: dto.slotId } });
     if (!slot || slot.cafeId !== table.cafeId) {
       throw new NotFoundException('Slot not found for this table');
     }
 
-    const existing = await this.reservations.findOne({
-      where: { tableId: dto.tableId, slotId: dto.slotId, status: ReservationStatus.BOOKED },
-    });
-    if (existing) {
-      throw new ConflictException('This table is already booked for that slot');
+    switch (dto.strategy) {
+      case BookingStrategy.PESSIMISTIC:
+        return this.bookPessimistic(userId, dto);
+      case BookingStrategy.OPTIMISTIC:
+        return this.bookOptimistic(userId, dto);
+      case BookingStrategy.UNIQUE:
+      default:
+        return this.bookUnique(userId, dto);
     }
+  }
 
-    return this.reservations.save(
-      this.reservations.create({
+  /** Unique constraint: insert optimistically, let Postgres reject the loser. */
+  private async bookUnique(userId: string, dto: CreateReservationDto): Promise<Reservation> {
+    try {
+      return await this.reservations.save(
+        this.reservations.create({
+          userId,
+          tableId: dto.tableId,
+          slotId: dto.slotId,
+          status: ReservationStatus.BOOKED,
+        }),
+      );
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException(TAKEN_MESSAGE);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Pessimistic: `SELECT ... FOR UPDATE` on the slot row serializes every
+   * request against this slot (across all tables at that time — coarser
+   * than per-table, the tradeoff for a simple, always-correct lock target
+   * that's guaranteed to exist before any booking happens).
+   */
+  private async bookPessimistic(userId: string, dto: CreateReservationDto): Promise<Reservation> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      await queryRunner.manager.query('SELECT id FROM slots WHERE id = $1 FOR UPDATE', [dto.slotId]);
+
+      const existing = await queryRunner.manager.findOne(Reservation, {
+        where: { tableId: dto.tableId, slotId: dto.slotId, status: ReservationStatus.BOOKED },
+      });
+      if (existing) {
+        throw new ConflictException(TAKEN_MESSAGE);
+      }
+
+      const reservation = queryRunner.manager.create(Reservation, {
         userId,
         tableId: dto.tableId,
         slotId: dto.slotId,
         status: ReservationStatus.BOOKED,
-      }),
-    );
+      });
+      const saved = await queryRunner.manager.save(reservation);
+      await queryRunner.commitTransaction();
+      return saved;
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      if (isUniqueViolation(err)) {
+        throw new ConflictException(TAKEN_MESSAGE);
+      }
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * Optimistic: both requests proceed, but the compare-and-swap on the
+   * slot's `version` only lets one writer through per version — the loser
+   * sees affected=0 and retries, re-checking whether the slot is now
+   * actually taken (vs. a version bump from an unrelated table's booking).
+   */
+  private async bookOptimistic(userId: string, dto: CreateReservationDto): Promise<Reservation> {
+    for (let attempt = 0; attempt < OPTIMISTIC_MAX_ATTEMPTS; attempt++) {
+      const slot = await this.slots.findOneOrFail({ where: { id: dto.slotId } });
+
+      const existing = await this.reservations.findOne({
+        where: { tableId: dto.tableId, slotId: dto.slotId, status: ReservationStatus.BOOKED },
+      });
+      if (existing) {
+        throw new ConflictException(TAKEN_MESSAGE);
+      }
+
+      const updateResult = await this.slots
+        .createQueryBuilder()
+        .update(Slot)
+        .set({ version: () => '"version" + 1' })
+        .where('id = :id AND version = :version', { id: slot.id, version: slot.version })
+        .execute();
+
+      if (updateResult.affected !== 1) {
+        continue; // lost the CAS race — retry from a fresh read
+      }
+
+      try {
+        return await this.reservations.save(
+          this.reservations.create({
+            userId,
+            tableId: dto.tableId,
+            slotId: dto.slotId,
+            status: ReservationStatus.BOOKED,
+          }),
+        );
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new ConflictException(TAKEN_MESSAGE);
+        }
+        throw err;
+      }
+    }
+    throw new ConflictException(TAKEN_MESSAGE);
   }
 
   findMine(userId: string): Promise<Reservation[]> {

@@ -11,6 +11,11 @@ export async function createTestApp(): Promise<INestApplication> {
   const app = moduleRef.createNestApplication();
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   await app.init();
+  // Listen explicitly (rather than relying on supertest's implicit per-request
+  // `listen(0)`): many concurrent supertest requests as the very first traffic
+  // to an unlistened http.Server race on that implicit listen and can produce
+  // spurious ECONNRESETs under the concurrent-booking tests (M1, issue #3).
+  await app.listen(0);
   return app;
 }
 

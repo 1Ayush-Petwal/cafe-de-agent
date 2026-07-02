@@ -16,6 +16,15 @@ export class Slot {
   @Column({ type: 'timestamptz' })
   slotTime!: Date;
 
+  /**
+   * M1 optimistic-locking strategy: bumped on every booking attempt against
+   * this slot (any table), compare-and-swapped so a losing writer sees
+   * affected=0 and retries. Coarser than per-(table,slot) — matches the
+   * pessimistic strategy's lock granularity for a fair comparison.
+   */
+  @Column({ type: 'int', default: 0 })
+  version!: number;
+
   @CreateDateColumn()
   createdAt!: Date;
 }
