@@ -21,7 +21,9 @@ export async function createTestApp(): Promise<INestApplication> {
 
 export async function truncateAll(app: INestApplication): Promise<void> {
   const dataSource = app.get(DataSource);
-  await dataSource.query('TRUNCATE TABLE reservations, slots, tables, cafes, users RESTART IDENTITY CASCADE');
+  await dataSource.query(
+    'TRUNCATE TABLE payments, reservations, slots, tables, cafes, users RESTART IDENTITY CASCADE',
+  );
 }
 
 export interface Fixture {

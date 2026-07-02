@@ -2,22 +2,27 @@ import {
   ConflictException,
   GoneException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { CafeTable } from '../entities/cafe-table.entity';
+import { Payment } from '../entities/payment.entity';
 import { ReservationStatus } from '../entities/reservation-status.enum';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
 import { Hold, HoldsService } from '../holds/holds.service';
+import { PaymentsService } from '../payments/payments.service';
 import { BookingStrategy } from './booking-strategy.enum';
 import { ConfirmHoldDto } from './dto/confirm-hold.dto';
 import { CreateHoldDto } from './dto/create-hold.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 
 const TAKEN_MESSAGE = 'This table is already booked for that slot';
+const PAYMENT_FAILED_MESSAGE = 'Payment failed — please try again';
 const UNIQUE_VIOLATION = '23505';
 const OPTIMISTIC_MAX_ATTEMPTS = 10;
 const DEFAULT_HOLD_TTL_SECONDS = 90;
@@ -36,6 +41,7 @@ export class ReservationsService {
     @InjectRepository(Slot) private readonly slots: Repository<Slot>,
     private readonly dataSource: DataSource,
     private readonly holds: HoldsService,
+    private readonly paymentGateway: PaymentsService,
   ) {
     this.holdTtlSeconds = Number(process.env.HOLD_TTL_SECONDS) || DEFAULT_HOLD_TTL_SECONDS;
   }
@@ -209,6 +215,12 @@ export class ReservationsService {
    * race the Roadmap calls out: if the hold expired and someone else
    * re-held the slot in the gap, the token no longer matches and this
    * fails cleanly instead of confirming a slot we no longer own.
+   *
+   * The mock charge (issue #5) runs after the hold is consumed and before
+   * the reservation is written: the hold key is already gone by the time we
+   * know the payment outcome, so a failed charge needs no separate
+   * "release the hold" step — the slot is already free — and simply leaves
+   * no reservation or payment row behind.
    */
   async confirmHold(userId: string, dto: ConfirmHoldDto): Promise<Reservation> {
     const consumed = await this.holds.consume(userId, dto.tableId, dto.slotId, dto.holdId);
@@ -216,15 +228,25 @@ export class ReservationsService {
       throw new GoneException('Your hold expired or was already used — please try again');
     }
 
+    const charged = await this.paymentGateway.charge();
+    if (!charged) {
+      throw new HttpException(PAYMENT_FAILED_MESSAGE, HttpStatus.PAYMENT_REQUIRED);
+    }
+
     try {
-      return await this.reservations.save(
-        this.reservations.create({
-          userId,
-          tableId: dto.tableId,
-          slotId: dto.slotId,
-          status: ReservationStatus.BOOKED,
-        }),
-      );
+      return await this.dataSource.transaction(async (manager) => {
+        const reservation = await manager.save(
+          Reservation,
+          manager.create(Reservation, {
+            userId,
+            tableId: dto.tableId,
+            slotId: dto.slotId,
+            status: ReservationStatus.BOOKED,
+          }),
+        );
+        await manager.save(Payment, manager.create(Payment, { reservationId: reservation.id }));
+        return reservation;
+      });
     } catch (err) {
       if (isUniqueViolation(err)) {
         throw new ConflictException(TAKEN_MESSAGE);

@@ -2,14 +2,21 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { CafeTable } from '../entities/cafe-table.entity';
+import { Payment } from '../entities/payment.entity';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
 import { HoldsModule } from '../holds/holds.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { ReservationsController } from './reservations.controller';
 import { ReservationsService } from './reservations.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Reservation, CafeTable, Slot]), AuthModule, HoldsModule],
+  imports: [
+    TypeOrmModule.forFeature([Reservation, CafeTable, Slot, Payment]),
+    AuthModule,
+    HoldsModule,
+    PaymentsModule,
+  ],
   controllers: [ReservationsController],
   providers: [ReservationsService],
 })
