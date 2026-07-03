@@ -1,5 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import Redis from 'ioredis';
+import { REDIS_CLIENT } from '../src/redis/redis.constants';
 import { createTestApp, Fixture, seedFixture, truncateAll } from './utils/test-app';
 
 async function signup(app: INestApplication, email: string): Promise<string> {
@@ -13,14 +15,20 @@ async function signup(app: INestApplication, email: string): Promise<string> {
 describe('Booking tracer bullet (e2e)', () => {
   let app: INestApplication;
   let fixture: Fixture;
+  let redis: Redis;
 
   beforeAll(async () => {
     app = await createTestApp();
+    redis = app.get(REDIS_CLIENT);
   });
 
   beforeEach(async () => {
     await truncateAll(app);
     fixture = await seedFixture(app);
+    // The café-list cache-aside key (issue #13) isn't scoped per café, so a
+    // stale entry from a previous test's fixture would leak into this file's
+    // exact-content assertion on GET /cafes without a flush.
+    await redis.flushdb();
   });
 
   afterAll(async () => {

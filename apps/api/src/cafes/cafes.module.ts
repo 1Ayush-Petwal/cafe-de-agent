@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CacheModule } from '../cache/cache.module';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { Cafe } from '../entities/cafe.entity';
 import { Reservation } from '../entities/reservation.entity';
@@ -10,7 +11,12 @@ import { CafesController } from './cafes.controller';
 import { CafesService } from './cafes.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Cafe, CafeTable, Slot, Reservation]), HoldsModule, RealtimeModule],
+  imports: [
+    TypeOrmModule.forFeature([Cafe, CafeTable, Slot, Reservation]),
+    HoldsModule,
+    RealtimeModule,
+    CacheModule,
+  ],
   controllers: [CafesController],
   providers: [CafesService],
   exports: [CafesService],

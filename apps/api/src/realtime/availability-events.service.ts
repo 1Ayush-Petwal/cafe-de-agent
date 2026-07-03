@@ -1,6 +1,7 @@
 import { Inject, Injectable, MessageEvent } from '@nestjs/common';
 import Redis from 'ioredis';
 import { Observable } from 'rxjs';
+import { AvailabilityCacheService } from '../cache/availability-cache.service';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 
 export type AvailabilityChangeType = 'held' | 'confirmed' | 'cancelled';
@@ -21,13 +22,22 @@ export interface AvailabilityChangedEvent {
  */
 @Injectable()
 export class AvailabilityEventsService {
-  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
+  constructor(
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly cache: AvailabilityCacheService,
+  ) {}
 
   private channel(cafeId: string): string {
     return `cafe:${cafeId}`;
   }
 
+  /**
+   * M6 (issue #13): every booking-state change already flows through here,
+   * so this is the single place that invalidates the availability cache —
+   * no separate wiring needed in ReservationsService's three call sites.
+   */
   async publish(event: AvailabilityChangedEvent): Promise<void> {
+    await this.cache.invalidateAvailability(event.cafeId);
     await this.redis.publish(this.channel(event.cafeId), JSON.stringify(event));
   }
 

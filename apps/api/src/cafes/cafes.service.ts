@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository } from 'typeorm';
+import { AvailabilityCacheService } from '../cache/availability-cache.service';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { Cafe } from '../entities/cafe.entity';
 import { ReservationStatus } from '../entities/reservation-status.enum';
@@ -29,10 +30,23 @@ export class CafesService {
     @InjectRepository(Slot) private readonly slots: Repository<Slot>,
     @InjectRepository(Reservation) private readonly reservations: Repository<Reservation>,
     private readonly holds: HoldsService,
+    private readonly availabilityCache: AvailabilityCacheService,
   ) {}
 
-  findAll(): Promise<Cafe[]> {
-    return this.cafes.find({ order: { name: 'ASC' } });
+  /**
+   * M6 (issue #13): café search served cache-aside — a short Redis TTL
+   * absorbs read traffic; the list only changes when an owner creates a
+   * café (rare), so no event-based invalidation is needed here (contrast
+   * getAvailability, which booking events do invalidate).
+   */
+  async findAll(): Promise<Cafe[]> {
+    const cached = await this.availabilityCache.getCafeList<Cafe[]>();
+    if (cached) {
+      return cached;
+    }
+    const cafes = await this.cafes.find({ order: { name: 'ASC' } });
+    await this.availabilityCache.setCafeList(cafes);
+    return cafes;
   }
 
   async findOne(cafeId: string): Promise<Cafe> {
@@ -43,8 +57,20 @@ export class CafesService {
     return cafe;
   }
 
+  /**
+   * M6 (issue #13): cache-aside with a short TTL, invalidated on any
+   * booking-state change for this café (AvailabilityEventsService.publish).
+   * The cache is a hint, never booking truth — hold()/executeConfirm() in
+   * ReservationsService never read from it, so a stale hit here can only
+   * ever make a free slot look busy, never the reverse.
+   */
   async getAvailability(cafeId: string, date: string): Promise<TableAvailability[]> {
     await this.findOne(cafeId);
+
+    const cached = await this.availabilityCache.get<TableAvailability[]>(cafeId, date);
+    if (cached) {
+      return cached;
+    }
 
     const dayStart = new Date(`${date}T00:00:00.000Z`);
     const dayEnd = new Date(`${date}T23:59:59.999Z`);
@@ -58,12 +84,14 @@ export class CafesService {
     ]);
 
     if (tables.length === 0 || daySlots.length === 0) {
-      return tables.map((table) => ({
+      const empty = tables.map((table) => ({
         tableId: table.id,
         label: table.label,
         capacity: table.capacity,
         slots: [],
       }));
+      await this.availabilityCache.set(cafeId, date, empty);
+      return empty;
     }
 
     const tableIds = tables.map((t) => t.id);
@@ -74,7 +102,7 @@ export class CafesService {
     ]);
     const bookedKeys = new Set(booked.map((r) => `${r.tableId}:${r.slotId}`));
 
-    return tables.map((table) => ({
+    const result = tables.map((table) => ({
       tableId: table.id,
       label: table.label,
       capacity: table.capacity,
@@ -87,6 +115,8 @@ export class CafesService {
           !held.has(`${table.id}:${slot.id}`),
       })),
     }));
+    await this.availabilityCache.set(cafeId, date, result);
+    return result;
   }
 
   private async reservationsFor(tableIds: string[], slotIds: string[]): Promise<Reservation[]> {
