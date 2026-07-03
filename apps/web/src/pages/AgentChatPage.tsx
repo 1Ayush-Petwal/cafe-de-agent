@@ -27,6 +27,8 @@ export function AgentChatPage() {
   const [workflow, setWorkflow] = useState<AgentWorkflowDto | null>(null);
   const [sending, setSending] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [answerText, setAnswerText] = useState('');
+  const [answering, setAnswering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -74,6 +76,22 @@ export function AgentChatPage() {
     }
   };
 
+  const handleAnswer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!workflowId || !answerText.trim()) return;
+    setAnswering(true);
+    setError(null);
+    try {
+      await api.answerAgentWorkflow(workflowId, answerText.trim());
+      setAnswerText('');
+      refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send answer');
+    } finally {
+      setAnswering(false);
+    }
+  };
+
   return (
     <div className="agent-chat">
       <h1>Booking agent</h1>
@@ -114,6 +132,21 @@ export function AgentChatPage() {
                 {approving ? '…' : 'Approve'}
               </button>
             </div>
+          )}
+
+          {workflow.status === 'awaiting_input' && workflow.pendingAction && (
+            <form className="agent-answer" onSubmit={handleAnswer}>
+              <p>{(workflow.pendingAction.args.question as string) ?? 'The agent needs more information.'}</p>
+              <input
+                value={answerText}
+                onChange={(e) => setAnswerText(e.target.value)}
+                placeholder="Your answer"
+                disabled={answering}
+              />
+              <button type="submit" disabled={answering || !answerText.trim()}>
+                {answering ? '…' : 'Send'}
+              </button>
+            </form>
           )}
 
           {workflow.status === 'done' && <p className="agent-done">Booking confirmed.</p>}

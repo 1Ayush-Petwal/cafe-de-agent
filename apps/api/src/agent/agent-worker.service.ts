@@ -9,12 +9,16 @@ import { AgentLlmClient } from './llm/agent-llm.client';
 
 export const AGENT_BATCH_SIZE = 5;
 const MAX_STEPS_PER_TICK = 8;
+/** Per-session guardrail (issue #10): caps how many tables one workflow may hold, so a runaway loop can't spam holds. */
+export const MAX_HOLDS_PER_WORKFLOW = 3;
 
 const SYSTEM_INSTRUCTION = `You are a booking agent for a café table-reservation platform. You act on behalf of the
 customer, using only the tools provided — you have no other way to affect the system.
 Typical flow: search_cafes to find a café matching the request, check_availability for a date to find a free
 table+slot, hold_table to hold it, then confirm_hold to pay and finalize. confirm_hold spends the customer's
 money, so only call it once you've already held the specific table and slot they want.
+If the request is missing something you genuinely need (e.g. no date, party size, or area), call ask_user with
+a specific question instead of guessing — the customer's answer will come back as that tool's response.
 Once the reservation is confirmed, reply with plain text (no further tool call) summarizing what was booked.`;
 
 /**
@@ -114,9 +118,20 @@ export class AgentWorkerService {
         return;
       }
 
+      if (this.tools.clarifyingTools.has(turn.functionCall.name)) {
+        workflow.pendingAction = { name: turn.functionCall.name, args: turn.functionCall.args };
+        workflow.status = AgentWorkflowStatus.AWAITING_INPUT;
+        return;
+      }
+
       if (this.tools.spendingTools.has(turn.functionCall.name)) {
         workflow.pendingAction = { name: turn.functionCall.name, args: turn.functionCall.args };
         workflow.status = AgentWorkflowStatus.AWAITING_APPROVAL;
+        return;
+      }
+
+      if (turn.functionCall.name === 'hold_table' && workflow.holdCount >= MAX_HOLDS_PER_WORKFLOW) {
+        this.fail(workflow, new Error('Agent exceeded its hold budget for this request'));
         return;
       }
 
@@ -139,6 +154,9 @@ export class AgentWorkerService {
       const idempotencyKey = name === 'confirm_hold' ? `agent:${workflow.id}` : undefined;
       const result = await this.tools.execute(name, args, token, idempotencyKey);
       workflow.history = [...workflow.history, { role: 'user', functionResponse: { name, response: result } }];
+      if (name === 'hold_table') {
+        workflow.holdCount += 1;
+      }
       if (name === 'confirm_hold' && typeof result.id === 'string') {
         workflow.reservationId = result.id;
       }

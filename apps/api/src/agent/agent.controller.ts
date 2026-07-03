@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt.strategy';
 import { AgentEventsService } from './agent-events.service';
 import { AgentService } from './agent.service';
+import { AnswerWorkflowDto } from './dto/answer-workflow.dto';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
 
 @Controller('agent/workflows')
@@ -44,6 +45,13 @@ export class AgentController {
   @UseGuards(JwtAuthGuard)
   async approve(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     const workflow = await this.agent.approve(user.sub, id);
+    return { id: workflow.id, status: workflow.status };
+  }
+
+  @Post(':id/answer')
+  @UseGuards(JwtAuthGuard)
+  async answer(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Body() dto: AnswerWorkflowDto) {
+    const workflow = await this.agent.answer(user.sub, id, dto.answer);
     return { id: workflow.id, status: workflow.status };
   }
 

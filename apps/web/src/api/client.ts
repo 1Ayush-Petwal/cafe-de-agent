@@ -101,7 +101,7 @@ export interface AgentTurnDto {
 
 export interface AgentWorkflowDto {
   id: string;
-  status: 'pending' | 'awaiting_approval' | 'done' | 'failed';
+  status: 'pending' | 'awaiting_approval' | 'awaiting_input' | 'done' | 'failed';
   request: string;
   history: AgentTurnDto[];
   pendingAction: { name: string; args: Record<string, unknown> } | null;
@@ -190,6 +190,11 @@ export const api = {
   getAgentWorkflow: (id: string) => request<AgentWorkflowDto>(`/agent/workflows/${id}`),
   approveAgentWorkflow: (id: string) =>
     request<{ id: string; status: string }>(`/agent/workflows/${id}/approve`, { method: 'POST' }),
+  answerAgentWorkflow: (id: string, answer: string) =>
+    request<{ id: string; status: string }>(`/agent/workflows/${id}/answer`, {
+      method: 'POST',
+      body: JSON.stringify({ answer }),
+    }),
   // `EventSource` can't set an Authorization header, so the workflow's owner
   // token travels as a query param instead — the server verifies it itself
   // (see AgentController.stream) rather than relying on the header-only guard

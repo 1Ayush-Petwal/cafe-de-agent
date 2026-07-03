@@ -43,12 +43,21 @@ export class AgentWorkflow {
   @Column({ type: 'jsonb', default: () => "'[]'" })
   history!: LlmTurn[];
 
-  /** The tool call parked for approval (e.g. `confirm_hold`); executed for real once approved. */
+  /**
+   * The tool call parked for approval or input (e.g. `confirm_hold`,
+   * `ask_user`). A real API tool is executed once approved; `ask_user` is a
+   * pure control-flow signal — the customer's answer is appended straight to
+   * `history` and never goes over HTTP.
+   */
   @Column({ type: 'jsonb', nullable: true })
   pendingAction!: { name: string; args: Record<string, unknown> } | null;
 
   @Column({ type: 'uuid', nullable: true })
   reservationId!: string | null;
+
+  /** Per-session guardrail (issue #10): caps how many tables this workflow may hold, so a runaway loop can't spam holds. */
+  @Column({ type: 'int', default: 0 })
+  holdCount!: number;
 
   @Column({ type: 'text', nullable: true })
   failureReason!: string | null;

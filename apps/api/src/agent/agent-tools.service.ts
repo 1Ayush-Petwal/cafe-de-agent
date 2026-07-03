@@ -60,10 +60,25 @@ export class AgentToolsService {
         required: ['tableId', 'slotId', 'holdId'],
       },
     },
+    {
+      name: 'ask_user',
+      description:
+        "Ask the customer a clarifying question when their request is ambiguous (e.g. no date, party size, or area given). Only use this when you genuinely can't proceed without an answer.",
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string' },
+        },
+        required: ['question'],
+      },
+    },
   ];
 
   /** Tool calls that spend money and must park in AWAITING_APPROVAL before executing. */
   readonly spendingTools = new Set(['confirm_hold']);
+
+  /** Pure control-flow signal — never goes over HTTP; parks in AWAITING_INPUT until the customer answers. */
+  readonly clarifyingTools = new Set(['ask_user']);
 
   async execute(
     name: string,

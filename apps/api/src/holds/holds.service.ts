@@ -25,6 +25,33 @@ else
 end
 `;
 
+/**
+ * Acquire-or-reuse (issue #10): a plain `SET NX` fails whenever the key
+ * exists, even if the existing hold is this same user's own — which is
+ * exactly what a retried `hold_table` call looks like after an agent worker
+ * crash rolls its DB transaction back but leaves the already-created Redis
+ * hold in place (issue #6's transactional-outbox pattern only protects the
+ * Postgres side; a real Redis side effect from before the crash survives a
+ * rollback). Returning the *existing* holdId instead of a conflict makes a
+ * retried hold_table idempotent per (user, table, slot) — no duplicate hold,
+ * no spurious "already held" failure on resume.
+ */
+const ACQUIRE_OR_REUSE_SCRIPT = `
+local current = redis.call("get", KEYS[1])
+if current == false then
+  redis.call("set", KEYS[1], ARGV[1], "EX", ARGV[2])
+  return {"created"}
+end
+local sep = string.find(current, ":")
+local existingUserId = string.sub(current, sep + 1)
+if existingUserId == ARGV[3] then
+  local existingHoldId = string.sub(current, 1, sep - 1)
+  local ttl = redis.call("ttl", KEYS[1])
+  return {"reused", existingHoldId, tostring(ttl)}
+end
+return {"conflict"}
+`;
+
 @Injectable()
 export class HoldsService {
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
@@ -37,7 +64,10 @@ export class HoldsService {
     return `${holdId}:${userId}`;
   }
 
-  /** `SET NX EX` — atomically acquires the hold or reports it's already taken. */
+  /**
+   * Atomically acquires the hold, reuses this same user's already-held slot
+   * (retry-safe), or reports it's held by someone else.
+   */
   async create(
     userId: string,
     tableId: string,
@@ -45,15 +75,25 @@ export class HoldsService {
     ttlSeconds: number,
   ): Promise<Hold | null> {
     const holdId = randomUUID();
-    const result = await this.redis.set(
+    const [status, existingHoldId, existingTtl] = (await this.redis.eval(
+      ACQUIRE_OR_REUSE_SCRIPT,
+      1,
       this.key(tableId, slotId),
       this.token(holdId, userId),
-      'EX',
-      ttlSeconds,
-      'NX',
-    );
-    if (result !== 'OK') {
+      String(ttlSeconds),
+      userId,
+    )) as [string, string?, string?];
+
+    if (status === 'conflict') {
       return null;
+    }
+    if (status === 'reused') {
+      return {
+        holdId: existingHoldId!,
+        tableId,
+        slotId,
+        expiresAt: new Date(Date.now() + Number(existingTtl) * 1000),
+      };
     }
     return { holdId, tableId, slotId, expiresAt: new Date(Date.now() + ttlSeconds * 1000) };
   }
