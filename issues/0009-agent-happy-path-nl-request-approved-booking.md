@@ -21,7 +21,12 @@ The LLM sits behind a thin client boundary; tests use a scripted fake provider. 
 - [ ] Tests drive the whole flow with a scripted fake LLM at the client boundary; no real LLM calls in tests
 - [ ] An LLM provider is chosen and wired behind the client boundary using its current tool-use docs
 
-## Blocked by
+## Decisions (resolved by owner, 2026-07-04)
+
+- **LLM provider: Google Gemini.** Use model `gemini-2.0-flash` via the Gemini API's function-calling (tool-use) support, per its current docs.
+- **API key:** read `GEMINI_API_KEY` from `apps/api/.env` (loaded via `@nestjs/config` like the other vars). The owner adds the real key; do not commit it. If the key is absent, the agent endpoint should fail with a clear error — tests never need it because they use the scripted fake provider at the client boundary.
+
+## Blocked by (all done)
 
 - #5
 - #6
