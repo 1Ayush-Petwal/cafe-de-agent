@@ -101,4 +101,14 @@ export const api = {
     }),
   myReservations: () => request<ReservationDto[]>('/reservations/mine'),
   cancel: (id: string) => request<void>(`/reservations/${id}`, { method: 'DELETE' }),
+  // M4 (issue #7): live availability over SSE. `onChange` fires on every
+  // pushed event *and* on every (re)connect — EventSource's own `open`
+  // event covers "on reconnect the client refetches" for free, since a
+  // reconnect after a drop is indistinguishable from the initial connect.
+  subscribeAvailability: (cafeId: string, onChange: () => void): (() => void) => {
+    const source = new EventSource(`/api/cafes/${cafeId}/availability/stream`);
+    source.addEventListener('message', onChange);
+    source.addEventListener('open', onChange);
+    return () => source.close();
+  },
 };

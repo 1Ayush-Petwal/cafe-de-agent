@@ -17,6 +17,7 @@ import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
 import { Hold, HoldsService } from '../holds/holds.service';
 import { PaymentsService } from '../payments/payments.service';
+import { AvailabilityEventsService } from '../realtime/availability-events.service';
 import { BookingStrategy } from './booking-strategy.enum';
 import { ConfirmHoldDto } from './dto/confirm-hold.dto';
 import { CreateHoldDto } from './dto/create-hold.dto';
@@ -43,6 +44,7 @@ export class ReservationsService {
     private readonly dataSource: DataSource,
     private readonly holds: HoldsService,
     private readonly paymentGateway: PaymentsService,
+    private readonly events: AvailabilityEventsService,
   ) {
     this.holdTtlSeconds = Number(process.env.HOLD_TTL_SECONDS) || DEFAULT_HOLD_TTL_SECONDS;
   }
@@ -207,6 +209,7 @@ export class ReservationsService {
     if (!hold) {
       throw new ConflictException('This table is already held for that slot');
     }
+    await this.events.publish({ type: 'held', cafeId: table.cafeId, tableId: dto.tableId, slotId: dto.slotId });
     return hold;
   }
 
@@ -234,9 +237,10 @@ export class ReservationsService {
       throw new HttpException(PAYMENT_FAILED_MESSAGE, HttpStatus.PAYMENT_REQUIRED);
     }
 
+    let reservation: Reservation;
     try {
-      return await this.dataSource.transaction(async (manager) => {
-        const reservation = await manager.save(
+      reservation = await this.dataSource.transaction(async (manager) => {
+        const saved = await manager.save(
           Reservation,
           manager.create(Reservation, {
             userId,
@@ -245,7 +249,7 @@ export class ReservationsService {
             status: ReservationStatus.BOOKED,
           }),
         );
-        await manager.save(Payment, manager.create(Payment, { reservationId: reservation.id }));
+        await manager.save(Payment, manager.create(Payment, { reservationId: saved.id }));
         // Transactional outbox (issue #6): the notify job commits atomically
         // with the booking, so a confirmed reservation can never end up
         // without one — the worker (a separate process) drains this queue
@@ -253,12 +257,12 @@ export class ReservationsService {
         await manager.save(
           NotificationJob,
           manager.create(NotificationJob, {
-            reservationId: reservation.id,
+            reservationId: saved.id,
             userId,
             message: `Reservation confirmed: table ${dto.tableId}, slot ${dto.slotId}.`,
           }),
         );
-        return reservation;
+        return saved;
       });
     } catch (err) {
       if (isUniqueViolation(err)) {
@@ -266,6 +270,15 @@ export class ReservationsService {
       }
       throw err;
     }
+
+    const table = await this.tables.findOneOrFail({ where: { id: dto.tableId } });
+    await this.events.publish({
+      type: 'confirmed',
+      cafeId: table.cafeId,
+      tableId: dto.tableId,
+      slotId: dto.slotId,
+    });
+    return reservation;
   }
 
   findMine(userId: string): Promise<Reservation[]> {
@@ -286,5 +299,13 @@ export class ReservationsService {
     }
     reservation.status = ReservationStatus.CANCELLED;
     await this.reservations.save(reservation);
+
+    const table = await this.tables.findOneOrFail({ where: { id: reservation.tableId } });
+    await this.events.publish({
+      type: 'cancelled',
+      cafeId: table.cafeId,
+      tableId: reservation.tableId,
+      slotId: reservation.slotId,
+    });
   }
 }

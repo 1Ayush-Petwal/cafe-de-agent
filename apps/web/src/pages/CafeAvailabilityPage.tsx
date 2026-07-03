@@ -38,6 +38,13 @@ export function CafeAvailabilityPage() {
     load();
   }, [load]);
 
+  // M4 (issue #7): live grid updates via SSE — any hold/confirm/cancel by
+  // anyone else on this café refetches availability without a manual reload.
+  useEffect(() => {
+    if (!cafeId) return;
+    return api.subscribeAvailability(cafeId, load);
+  }, [cafeId, load]);
+
   // Countdown ticker for the active hold; once it hits zero the hold has
   // expired server-side too (Redis TTL), so drop it and refresh the grid.
   useEffect(() => {
