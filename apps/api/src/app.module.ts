@@ -6,6 +6,7 @@ import { CafesModule } from './cafes/cafes.module';
 import { buildTypeOrmConfig } from './config/typeorm.config';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OwnerModule } from './owner/owner.module';
+import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { RedisModule } from './redis/redis.module';
 import { ReservationsModule } from './reservations/reservations.module';
 
@@ -15,6 +16,7 @@ import { ReservationsModule } from './reservations/reservations.module';
     TypeOrmModule.forRoot(buildTypeOrmConfig()),
     RedisModule,
     AuthModule,
+    RateLimitModule,
     CafesModule,
     ReservationsModule,
     NotificationsModule,
