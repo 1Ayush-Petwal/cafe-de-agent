@@ -8,6 +8,7 @@ export function SignupPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'customer' | 'owner'>('customer');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -16,8 +17,8 @@ export function SignupPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await signup(email, password);
-      navigate('/cafes');
+      await signup(email, password, role);
+      navigate(role === 'owner' ? '/owner' : '/cafes');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Signup failed');
     } finally {
@@ -42,6 +43,13 @@ export function SignupPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
+        </label>
+        <label>
+          I am a
+          <select value={role} onChange={(e) => setRole(e.target.value as 'customer' | 'owner')}>
+            <option value="customer">Customer</option>
+            <option value="owner">Café owner</option>
+          </select>
         </label>
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={submitting}>

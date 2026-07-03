@@ -4,11 +4,18 @@ import { CafeAvailabilityPage } from './pages/CafeAvailabilityPage';
 import { CafeListPage } from './pages/CafeListPage';
 import { LoginPage } from './pages/LoginPage';
 import { MyReservationsPage } from './pages/MyReservationsPage';
+import { OwnerDashboardPage } from './pages/OwnerDashboardPage';
 import { SignupPage } from './pages/SignupPage';
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? children : <Navigate to="/login" replace />;
+}
+
+function RequireOwner({ children }: { children: JSX.Element }) {
+  const { isAuthenticated, user } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return user?.role === 'owner' ? children : <Navigate to="/cafes" replace />;
 }
 
 export function App() {
@@ -22,7 +29,11 @@ export function App() {
           <Link to="/cafes">Cafés</Link>
           {isAuthenticated ? (
             <>
-              <Link to="/reservations">My reservations</Link>
+              {user?.role === 'owner' ? (
+                <Link to="/owner">Owner dashboard</Link>
+              ) : (
+                <Link to="/reservations">My reservations</Link>
+              )}
               <span className="user-email">{user?.email}</span>
               <button onClick={logout}>Log out</button>
             </>
@@ -47,6 +58,14 @@ export function App() {
               <RequireAuth>
                 <MyReservationsPage />
               </RequireAuth>
+            }
+          />
+          <Route
+            path="/owner"
+            element={
+              <RequireOwner>
+                <OwnerDashboardPage />
+              </RequireOwner>
             }
           />
         </Routes>

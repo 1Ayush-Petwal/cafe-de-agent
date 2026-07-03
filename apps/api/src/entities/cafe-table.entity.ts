@@ -28,6 +28,9 @@ export class CafeTable {
   @Column({ type: 'int' })
   capacity!: number;
 
+  @Column({ default: true })
+  inService!: boolean;
+
   @CreateDateColumn()
   createdAt!: Date;
 }

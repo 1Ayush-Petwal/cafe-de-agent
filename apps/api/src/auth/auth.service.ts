@@ -29,7 +29,7 @@ export class AuthService {
     }
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
     const user = await this.users.save(
-      this.users.create({ email: dto.email, passwordHash, role: UserRole.CUSTOMER }),
+      this.users.create({ email: dto.email, passwordHash, role: dto.role ?? UserRole.CUSTOMER }),
     );
     return this.issueToken(user);
   }

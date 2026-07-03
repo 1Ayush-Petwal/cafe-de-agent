@@ -81,7 +81,10 @@ export class CafesService {
       slots: daySlots.map((slot) => ({
         slotId: slot.id,
         slotTime: slot.slotTime,
-        available: !bookedKeys.has(`${table.id}:${slot.id}`) && !held.has(`${table.id}:${slot.id}`),
+        available:
+          table.inService &&
+          !bookedKeys.has(`${table.id}:${slot.id}`) &&
+          !held.has(`${table.id}:${slot.id}`),
       })),
     }));
   }

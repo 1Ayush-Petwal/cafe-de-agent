@@ -11,7 +11,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string, role?: 'customer' | 'owner') => Promise<void>;
   logout: () => void;
 }
 
@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isAuthenticated: !!user,
       login: async (email, password) => applyAuth(await api.login(email, password)),
-      signup: async (email, password) => applyAuth(await api.signup(email, password)),
+      signup: async (email, password, role) => applyAuth(await api.signup(email, password, role)),
       logout: () => {
         setToken(null);
         localStorage.removeItem(USER_KEY);

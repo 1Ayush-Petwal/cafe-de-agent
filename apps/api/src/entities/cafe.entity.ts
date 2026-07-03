@@ -15,6 +15,10 @@ export class Cafe {
   @Column({ type: 'text', default: '' })
   description!: string;
 
+  /** Nullable: seeded cafés (apps/api/src/seed/seed.ts) have no owner. */
+  @Column({ type: 'uuid', nullable: true })
+  ownerId!: string | null;
+
   @OneToMany(() => CafeTable, (table) => table.cafe)
   tables!: CafeTable[];
 
