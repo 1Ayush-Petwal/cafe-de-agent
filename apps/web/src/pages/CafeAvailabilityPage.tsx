@@ -23,6 +23,9 @@ export function CafeAvailabilityPage() {
   const [hold, setHold] = useState<HoldDto | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [confirming, setConfirming] = useState(false);
+  // One idempotency key per hold, reused for every confirm attempt against
+  // it (double-click, or a manual retry after an error) — see api.confirmHold.
+  const [confirmKey, setConfirmKey] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!cafeId) return;
@@ -73,6 +76,7 @@ export function CafeAvailabilityPage() {
     try {
       const newHold = await api.hold(tableId, slotId);
       setHold(newHold);
+      setConfirmKey(crypto.randomUUID());
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not hold that slot');
@@ -82,16 +86,18 @@ export function CafeAvailabilityPage() {
   };
 
   const handleConfirm = async () => {
-    if (!hold) return;
+    if (!hold || !confirmKey) return;
     setConfirming(true);
     setError(null);
     try {
-      await api.confirmHold(hold.holdId, hold.tableId, hold.slotId);
+      await api.confirmHold(hold.holdId, hold.tableId, hold.slotId, confirmKey);
       setHold(null);
+      setConfirmKey(null);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not confirm that booking');
       setHold(null);
+      setConfirmKey(null);
       load();
     } finally {
       setConfirming(false);

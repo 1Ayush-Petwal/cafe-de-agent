@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
   ConflictException,
   GoneException,
@@ -10,6 +11,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { CafeTable } from '../entities/cafe-table.entity';
+import { IdempotencyKey } from '../entities/idempotency-key.entity';
 import { NotificationJob } from '../entities/notification-job.entity';
 import { Payment } from '../entities/payment.entity';
 import { ReservationStatus } from '../entities/reservation-status.enum';
@@ -41,6 +43,7 @@ export class ReservationsService {
     @InjectRepository(Reservation) private readonly reservations: Repository<Reservation>,
     @InjectRepository(CafeTable) private readonly tables: Repository<CafeTable>,
     @InjectRepository(Slot) private readonly slots: Repository<Slot>,
+    @InjectRepository(IdempotencyKey) private readonly idempotencyKeys: Repository<IdempotencyKey>,
     private readonly dataSource: DataSource,
     private readonly holds: HoldsService,
     private readonly paymentGateway: PaymentsService,
@@ -214,6 +217,88 @@ export class ReservationsService {
   }
 
   /**
+   * M6 (issue #11): with an `Idempotency-Key`, the first request to claim
+   * the key executes for real and stores its outcome; every later request
+   * with the same (userId, key) replays that stored outcome instead of
+   * re-consuming the hold or re-charging — the double-click / retried-agent-
+   * tool-call case. Without a key, confirm behaves exactly as before (no
+   * regression for callers that don't send one).
+   *
+   * Claiming is a plain `INSERT ... ON CONFLICT DO NOTHING`: the loser of a
+   * genuine race (two requests with the same key landing at once) gets
+   * `identifiers.length === 0` and, since the winner hasn't finished yet,
+   * finds a row with `responseBody` still null — reported as 409 rather
+   * than executed a second time. A key reused for a *different* request
+   * (different tableId/slotId/holdId) is rejected outright rather than
+   * silently replaying the wrong reservation. See docs/idempotency-keys.md
+   * for the keying/retention contract.
+   */
+  async confirmHold(userId: string, dto: ConfirmHoldDto, idempotencyKey?: string): Promise<Reservation> {
+    if (!idempotencyKey) {
+      return this.executeConfirm(userId, dto);
+    }
+
+    const requestHash = createHash('sha256')
+      .update(JSON.stringify({ tableId: dto.tableId, slotId: dto.slotId, holdId: dto.holdId }))
+      .digest('hex');
+
+    // IdempotencyKey has no generated columns, so TypeORM can't populate
+    // `identifiers` from a RETURNING round-trip the way it does for
+    // generated PKs — it just echoes back the values we supplied, which
+    // would report success even when `ON CONFLICT DO NOTHING` silently
+    // skipped the insert. An explicit `.returning()` forces a real
+    // RETURNING clause, so `claim.raw` reflects whether a row actually
+    // landed: empty means someone else already claimed this key.
+    const claim = await this.idempotencyKeys
+      .createQueryBuilder()
+      .insert()
+      .values({ userId, key: idempotencyKey, requestHash, statusCode: null, responseBody: null })
+      .orIgnore()
+      .returning(['userId', 'key'])
+      .execute();
+
+    if ((claim.raw as unknown[]).length === 0) {
+      const existing = await this.idempotencyKeys.findOneOrFail({ where: { userId, key: idempotencyKey } });
+      if (existing.requestHash !== requestHash) {
+        throw new ConflictException('This Idempotency-Key was already used for a different request');
+      }
+      return this.replay(existing);
+    }
+
+    try {
+      const reservation = await this.executeConfirm(userId, dto);
+      await this.idempotencyKeys.update(
+        { userId, key: idempotencyKey },
+        { statusCode: HttpStatus.CREATED, responseBody: { ...reservation } },
+      );
+      return reservation;
+    } catch (err) {
+      if (err instanceof HttpException) {
+        await this.idempotencyKeys.update(
+          { userId, key: idempotencyKey },
+          { statusCode: err.getStatus(), responseBody: { message: err.message } },
+        );
+      } else {
+        // Nothing finished — don't poison the key with a transient failure;
+        // let a genuine retry re-execute from scratch.
+        await this.idempotencyKeys.delete({ userId, key: idempotencyKey });
+      }
+      throw err;
+    }
+  }
+
+  private replay(existing: IdempotencyKey): Reservation {
+    if (existing.responseBody === null) {
+      throw new ConflictException('This request is already being processed — please retry shortly');
+    }
+    if (existing.statusCode === HttpStatus.CREATED) {
+      return existing.responseBody as unknown as Reservation;
+    }
+    const message = (existing.responseBody as { message?: string }).message ?? 'Request failed';
+    throw new HttpException(message, existing.statusCode ?? HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+
+  /**
    * Confirm re-validates hold ownership atomically (check-and-delete via a
    * Lua script) before writing to Postgres — the nasty last-second-expiry
    * race the Roadmap calls out: if the hold expired and someone else
@@ -226,7 +311,7 @@ export class ReservationsService {
    * "release the hold" step — the slot is already free — and simply leaves
    * no reservation or payment row behind.
    */
-  async confirmHold(userId: string, dto: ConfirmHoldDto): Promise<Reservation> {
+  private async executeConfirm(userId: string, dto: ConfirmHoldDto): Promise<Reservation> {
     const consumed = await this.holds.consume(userId, dto.tableId, dto.slotId, dto.holdId);
     if (!consumed) {
       throw new GoneException('Your hold expired or was already used — please try again');

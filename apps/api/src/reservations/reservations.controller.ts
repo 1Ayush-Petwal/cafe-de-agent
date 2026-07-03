@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt.strategy';
@@ -25,8 +25,12 @@ export class ReservationsController {
   }
 
   @Post('confirm')
-  confirm(@CurrentUser() user: JwtPayload, @Body() dto: ConfirmHoldDto): Promise<Reservation> {
-    return this.reservations.confirmHold(user.sub, dto);
+  confirm(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ConfirmHoldDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ): Promise<Reservation> {
+    return this.reservations.confirmHold(user.sub, dto, idempotencyKey);
   }
 
   @Get('mine')

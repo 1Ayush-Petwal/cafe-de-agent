@@ -115,10 +115,15 @@ export const api = {
     request<TableAvailabilityDto[]>(`/cafes/${cafeId}/availability?date=${date}`),
   hold: (tableId: string, slotId: string) =>
     request<HoldDto>('/reservations/hold', { method: 'POST', body: JSON.stringify({ tableId, slotId }) }),
-  confirmHold: (holdId: string, tableId: string, slotId: string) =>
+  // M6 (issue #11): the Idempotency-Key is generated once per hold (see
+  // CafeAvailabilityPage) and reused across every confirm attempt for that
+  // hold, so a double-click or a retry-after-error never re-charges or
+  // re-books — the server replays the first attempt's stored result.
+  confirmHold: (holdId: string, tableId: string, slotId: string, idempotencyKey: string) =>
     request<ReservationDto>('/reservations/confirm', {
       method: 'POST',
       body: JSON.stringify({ holdId, tableId, slotId }),
+      headers: { 'Idempotency-Key': idempotencyKey },
     }),
   myReservations: () => request<ReservationDto[]>('/reservations/mine'),
   cancel: (id: string) => request<void>(`/reservations/${id}`, { method: 'DELETE' }),
