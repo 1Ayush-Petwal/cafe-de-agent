@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, Link } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
+import { AgentChatPage } from './pages/AgentChatPage';
 import { CafeAvailabilityPage } from './pages/CafeAvailabilityPage';
 import { CafeListPage } from './pages/CafeListPage';
 import { LoginPage } from './pages/LoginPage';
@@ -32,7 +33,10 @@ export function App() {
               {user?.role === 'owner' ? (
                 <Link to="/owner">Owner dashboard</Link>
               ) : (
-                <Link to="/reservations">My reservations</Link>
+                <>
+                  <Link to="/reservations">My reservations</Link>
+                  <Link to="/agent">Booking agent</Link>
+                </>
               )}
               <span className="user-email">{user?.email}</span>
               <button onClick={logout}>Log out</button>
@@ -57,6 +61,14 @@ export function App() {
             element={
               <RequireAuth>
                 <MyReservationsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/agent"
+            element={
+              <RequireAuth>
+                <AgentChatPage />
               </RequireAuth>
             }
           />

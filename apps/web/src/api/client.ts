@@ -92,6 +92,23 @@ export interface OwnerTableDto {
   inService: boolean;
 }
 
+export interface AgentTurnDto {
+  role: 'user' | 'model';
+  text?: string;
+  functionCall?: { name: string; args: Record<string, unknown> };
+  functionResponse?: { name: string; response: Record<string, unknown> };
+}
+
+export interface AgentWorkflowDto {
+  id: string;
+  status: 'pending' | 'awaiting_approval' | 'done' | 'failed';
+  request: string;
+  history: AgentTurnDto[];
+  pendingAction: { name: string; args: Record<string, unknown> } | null;
+  reservationId: string | null;
+  failureReason: string | null;
+}
+
 export interface OwnerBookingDto {
   id: string;
   tableId: string;
@@ -165,4 +182,23 @@ export const api = {
     }),
   ownerBookingsForDay: (cafeId: string, date: string) =>
     request<OwnerBookingDto[]>(`/owner/cafes/${cafeId}/bookings?date=${date}`),
+  startAgentWorkflow: (message: string) =>
+    request<{ id: string; status: string }>('/agent/workflows', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
+  getAgentWorkflow: (id: string) => request<AgentWorkflowDto>(`/agent/workflows/${id}`),
+  approveAgentWorkflow: (id: string) =>
+    request<{ id: string; status: string }>(`/agent/workflows/${id}/approve`, { method: 'POST' }),
+  // `EventSource` can't set an Authorization header, so the workflow's owner
+  // token travels as a query param instead — the server verifies it itself
+  // (see AgentController.stream) rather than relying on the header-only guard
+  // every other authenticated route uses.
+  subscribeAgentWorkflow: (id: string, onChange: () => void): (() => void) => {
+    const token = getToken() ?? '';
+    const source = new EventSource(`/api/agent/workflows/${id}/stream?token=${encodeURIComponent(token)}`);
+    source.addEventListener('message', onChange);
+    source.addEventListener('open', onChange);
+    return () => source.close();
+  },
 };

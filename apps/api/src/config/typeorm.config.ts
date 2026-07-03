@@ -1,4 +1,5 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { AgentWorkflow } from '../entities/agent-workflow.entity';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { Cafe } from '../entities/cafe.entity';
 import { IdempotencyKey } from '../entities/idempotency-key.entity';
@@ -23,6 +24,7 @@ export function buildTypeOrmConfig(): TypeOrmModuleOptions {
       NotificationJob,
       Notification,
       IdempotencyKey,
+      AgentWorkflow,
     ],
     // No migrations yet at M0 (tracer bullet); schema is generated from
     // entities. Migrations arrive when the schema needs to survive prod data.

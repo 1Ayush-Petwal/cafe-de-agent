@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AgentModule } from './agent/agent.module';
 import { AuthModule } from './auth/auth.module';
 import { CafesModule } from './cafes/cafes.module';
 import { buildTypeOrmConfig } from './config/typeorm.config';
@@ -21,6 +22,7 @@ import { ReservationsModule } from './reservations/reservations.module';
     ReservationsModule,
     NotificationsModule,
     OwnerModule,
+    AgentModule,
   ],
 })
 export class AppModule {}

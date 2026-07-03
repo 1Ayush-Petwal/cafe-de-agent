@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
+import { AgentToolsService } from '../../src/agent/agent-tools.service';
 import { AppModule } from '../../src/app.module';
 import { CafeTable } from '../../src/entities/cafe-table.entity';
 import { Cafe } from '../../src/entities/cafe.entity';
@@ -15,14 +16,23 @@ export async function createTestApp(): Promise<INestApplication> {
   // `listen(0)`): many concurrent supertest requests as the very first traffic
   // to an unlistened http.Server race on that implicit listen and can produce
   // spurious ECONNRESETs under the concurrent-booking tests (M1, issue #3).
-  await app.listen(0);
+  // Bound to the IPv4 loopback explicitly: a dual-stack `listen(0)` reports
+  // its address as bracketed `[::1]`, and the agent's tool calls (below) are
+  // real `fetch()`s that would then get sent through the sandbox's outbound
+  // proxy instead of straight to loopback, since its `NO_PROXY` only covers
+  // unbracketed `::1`.
+  await app.listen(0, '127.0.0.1');
+  // The agent's tools are real HTTP calls back into the app's own public API
+  // (issue #9) — point them at this test app's actual ephemeral port so
+  // those calls exercise the real endpoints instead of a hardcoded default.
+  app.get(AgentToolsService).setBaseUrl(await app.getUrl());
   return app;
 }
 
 export async function truncateAll(app: INestApplication): Promise<void> {
   const dataSource = app.get(DataSource);
   await dataSource.query(
-    'TRUNCATE TABLE idempotency_keys, notifications, notification_jobs, payments, reservations, slots, tables, cafes, users RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE agent_workflows, idempotency_keys, notifications, notification_jobs, payments, reservations, slots, tables, cafes, users RESTART IDENTITY CASCADE',
   );
 }
 
