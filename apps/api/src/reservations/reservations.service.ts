@@ -30,6 +30,8 @@ const PAYMENT_FAILED_MESSAGE = 'Payment failed — please try again';
 const UNIQUE_VIOLATION = '23505';
 const OPTIMISTIC_MAX_ATTEMPTS = 10;
 const DEFAULT_HOLD_TTL_SECONDS = 90;
+/** Issue #17 (PRD area B): one active reservation per user per café within any rolling 10-hour window. */
+const BOOKING_WINDOW_MS = 10 * 60 * 60 * 1000;
 
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof QueryFailedError && (err as unknown as { code?: string }).code === UNIQUE_VIOLATION;
@@ -53,6 +55,39 @@ export class ReservationsService {
   }
 
   /**
+   * Issue #17 (PRD area B): a user may hold only one active reservation per
+   * café within any rolling 10-hour window. Rejects if the user already has a
+   * `booked` reservation at this café whose slot time is strictly within 10
+   * hours of the requested slot time (so bookings exactly 10h apart are
+   * allowed). Cancelled reservations never count; different cafés are fully
+   * independent since the query is scoped to one `cafeId`. Enforced here once
+   * and applied at every write entry point — direct book, hold (fail fast),
+   * and confirm (authoritative) — so the AI agent inherits it for free by
+   * going through the same service.
+   */
+  private async assertWithinWindowFree(userId: string, cafeId: string, slotTime: Date): Promise<void> {
+    const windowStart = new Date(slotTime.getTime() - BOOKING_WINDOW_MS);
+    const windowEnd = new Date(slotTime.getTime() + BOOKING_WINDOW_MS);
+    const conflict = await this.reservations
+      .createQueryBuilder('r')
+      .innerJoin(Slot, 's', 's.id = r."slotId"')
+      .where('r."userId" = :userId', { userId })
+      .andWhere('r.status = :status', { status: ReservationStatus.BOOKED })
+      .andWhere('s."cafeId" = :cafeId', { cafeId })
+      .andWhere('s."slotTime" > :windowStart', { windowStart })
+      .andWhere('s."slotTime" < :windowEnd', { windowEnd })
+      .select('s."slotTime"', 'slotTime')
+      .getRawOne<{ slotTime: Date }>();
+
+    if (conflict) {
+      const existingTime = new Date(conflict.slotTime).toISOString();
+      throw new ConflictException(
+        `You already have a reservation at this café at ${existingTime}. Only one booking per café is allowed within a 10-hour window — cancel that one first.`,
+      );
+    }
+  }
+
+  /**
    * M1 (issue #3): check-and-reserve is now atomic. Three switchable
    * strategies close the M0 TOCTOU race (naive check-then-insert let
    * concurrent requests both pass the "is it free?" check and both insert).
@@ -68,6 +103,8 @@ export class ReservationsService {
     if (!slot || slot.cafeId !== table.cafeId) {
       throw new NotFoundException('Slot not found for this table');
     }
+
+    await this.assertWithinWindowFree(userId, table.cafeId, slot.slotTime);
 
     switch (dto.strategy) {
       case BookingStrategy.PESSIMISTIC:
@@ -208,6 +245,10 @@ export class ReservationsService {
       throw new ConflictException(TAKEN_MESSAGE);
     }
 
+    // Fail fast before taking the Redis hold — no point walking a customer
+    // through checkout for a booking the 10-hour window rule can never allow.
+    await this.assertWithinWindowFree(userId, table.cafeId, slot.slotTime);
+
     const hold = await this.holds.create(userId, dto.tableId, dto.slotId, this.holdTtlSeconds);
     if (!hold) {
       throw new ConflictException('This table is already held for that slot');
@@ -312,6 +353,14 @@ export class ReservationsService {
    * no reservation or payment row behind.
    */
   private async executeConfirm(userId: string, dto: ConfirmHoldDto): Promise<Reservation> {
+    // Authoritative re-check of the 10-hour window (issue #17): the hold may
+    // have been taken before a conflicting booking at this café existed, so
+    // re-validate here alongside the write rather than trusting the hold-time
+    // check. Run before consuming the hold so a rejected confirm leaves the
+    // hold intact for a legitimate retry after cancelling the conflict.
+    const slot = await this.slots.findOneOrFail({ where: { id: dto.slotId } });
+    await this.assertWithinWindowFree(userId, slot.cafeId, slot.slotTime);
+
     const consumed = await this.holds.consume(userId, dto.tableId, dto.slotId, dto.holdId);
     if (!consumed) {
       throw new GoneException('Your hold expired or was already used — please try again');
