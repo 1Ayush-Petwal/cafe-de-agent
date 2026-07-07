@@ -271,3 +271,77 @@ button:disabled {
 .cafe-pin-selected {
   filter: hue-rotate(140deg) saturate(1.6);
 }
+
+/* Locality search + sort modes (issue #22) */
+.measuring-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #eaf1ff;
+  color: #2f4d8a;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  margin-bottom: 0.75rem;
+}
+
+.measuring-chip button {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.area-not-found {
+  color: #b3261e;
+  font-size: 0.9rem;
+}
+
+.sort-toggle {
+  display: inline-flex;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.sort-toggle button {
+  background: white;
+  border: none;
+  padding: 0.4rem 1rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.sort-toggle button.active {
+  background: #2f6fed;
+  color: white;
+}
+
+.mode-cuisines {
+  margin-bottom: 0.75rem;
+}
+
+.cuisine-chip-button {
+  border: none;
+  cursor: pointer;
+}
+
+.cuisine-chip-button.selected {
+  background: #2f6fed;
+  color: white;
+}
+
+.locator-search-as-locality {
+  padding: 0.6rem 1rem;
+  color: #2f6fed;
+  cursor: pointer;
+  font-size: 0.85rem;
+  border: 1px dashed #ddd;
+  border-radius: 8px;
+  background: white;
+}

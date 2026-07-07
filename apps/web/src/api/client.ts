@@ -69,6 +69,12 @@ export interface ListCafesParams {
   sort?: 'rating';
 }
 
+export interface LocalityDto {
+  lat: number;
+  lon: number;
+  displayName: string;
+}
+
 export interface AvailabilitySlotDto {
   slotId: string;
   slotTime: string;
@@ -152,6 +158,10 @@ export const api = {
   },
   getAvailability: (cafeId: string, date: string) =>
     request<TableAvailabilityDto[]>(`/cafes/${cafeId}/availability?date=${date}`),
+  // Issue #22: fires only on explicit "search as a locality" selection, never
+  // per keystroke. A 404 (ApiError with status 404) means "area not found".
+  geocodeLocality: (query: string) =>
+    request<LocalityDto>(`/geo/locality?query=${encodeURIComponent(query)}`),
   hold: (tableId: string, slotId: string) =>
     request<HoldDto>('/reservations/hold', { method: 'POST', body: JSON.stringify({ tableId, slotId }) }),
   // M6 (issue #11): the Idempotency-Key is generated once per hold (see

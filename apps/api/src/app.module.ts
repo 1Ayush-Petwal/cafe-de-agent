@@ -5,6 +5,7 @@ import { AgentModule } from './agent/agent.module';
 import { AuthModule } from './auth/auth.module';
 import { CafesModule } from './cafes/cafes.module';
 import { buildTypeOrmConfig } from './config/typeorm.config';
+import { GeoModule } from './geo/geo.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OwnerModule } from './owner/owner.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
@@ -19,6 +20,7 @@ import { ReservationsModule } from './reservations/reservations.module';
     AuthModule,
     RateLimitModule,
     CafesModule,
+    GeoModule,
     ReservationsModule,
     NotificationsModule,
     OwnerModule,
