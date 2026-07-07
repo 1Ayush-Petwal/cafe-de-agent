@@ -74,26 +74,20 @@ export class ReservationsService {
    * at the same slot on a *different* table (e.g. a hold taken before a
    * conflicting booking appeared) correctly rejected.
    */
-  private async assertWithinWindowFree(
-    userId: string,
-    cafeId: string,
-    tableId: string,
-    slotId: string,
-    slotTime: Date,
-  ): Promise<void> {
-    const windowStart = new Date(slotTime.getTime() - BOOKING_WINDOW_MS);
-    const windowEnd = new Date(slotTime.getTime() + BOOKING_WINDOW_MS);
+  private async assertWithinWindowFree(userId: string, tableId: string, slot: Slot): Promise<void> {
+    const windowStart = new Date(slot.slotTime.getTime() - BOOKING_WINDOW_MS);
+    const windowEnd = new Date(slot.slotTime.getTime() + BOOKING_WINDOW_MS);
     const conflict = await this.reservations
       .createQueryBuilder('r')
       .innerJoin(Slot, 's', 's.id = r."slotId"')
       .where('r."userId" = :userId', { userId })
       .andWhere('r.status = :status', { status: ReservationStatus.BOOKED })
-      .andWhere('s."cafeId" = :cafeId', { cafeId })
+      .andWhere('s."cafeId" = :cafeId', { cafeId: slot.cafeId })
       .andWhere('s."slotTime" > :windowStart', { windowStart })
       .andWhere('s."slotTime" < :windowEnd', { windowEnd })
       .andWhere('NOT (r."tableId" = :selfTable AND r."slotId" = :selfSlot)', {
         selfTable: tableId,
-        selfSlot: slotId,
+        selfSlot: slot.id,
       })
       .select('s."slotTime"', 'slotTime')
       .getRawOne<{ slotTime: Date }>();
@@ -123,7 +117,7 @@ export class ReservationsService {
       throw new NotFoundException('Slot not found for this table');
     }
 
-    await this.assertWithinWindowFree(userId, table.cafeId, dto.tableId, dto.slotId, slot.slotTime);
+    await this.assertWithinWindowFree(userId, dto.tableId, slot);
 
     switch (dto.strategy) {
       case BookingStrategy.PESSIMISTIC:
@@ -266,7 +260,7 @@ export class ReservationsService {
 
     // Fail fast before taking the Redis hold — no point walking a customer
     // through checkout for a booking the 10-hour window rule can never allow.
-    await this.assertWithinWindowFree(userId, table.cafeId, dto.tableId, dto.slotId, slot.slotTime);
+    await this.assertWithinWindowFree(userId, dto.tableId, slot);
 
     const hold = await this.holds.create(userId, dto.tableId, dto.slotId, this.holdTtlSeconds);
     if (!hold) {
@@ -378,7 +372,7 @@ export class ReservationsService {
     // check. Run before consuming the hold so a rejected confirm leaves the
     // hold intact for a legitimate retry after cancelling the conflict.
     const slot = await this.slots.findOneOrFail({ where: { id: dto.slotId } });
-    await this.assertWithinWindowFree(userId, slot.cafeId, dto.tableId, dto.slotId, slot.slotTime);
+    await this.assertWithinWindowFree(userId, dto.tableId, slot);
 
     const consumed = await this.holds.consume(userId, dto.tableId, dto.slotId, dto.holdId);
     if (!consumed) {
