@@ -42,6 +42,13 @@ async function seed() {
         name: seedCafe.name,
         area: seedCafe.area,
         description: seedCafe.description,
+        latitude: seedCafe.latitude,
+        longitude: seedCafe.longitude,
+        openingHour: seedCafe.openingHour,
+        closingHour: seedCafe.closingHour,
+        cuisines: seedCafe.cuisines,
+        rating: seedCafe.rating,
+        ratingCount: seedCafe.ratingCount,
       }),
     );
 

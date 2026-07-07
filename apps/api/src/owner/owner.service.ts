@@ -13,9 +13,11 @@ import {
   dailySlotTimesConfigurable,
   toDateOnly,
 } from '../seed/slot-grid';
+import { AvailabilityCacheService } from '../cache/availability-cache.service';
 import { CreateCafeDto } from './dto/create-cafe.dto';
 import { CreateTableDto } from './dto/create-table.dto';
 import { GenerateSlotsDto } from './dto/generate-slots.dto';
+import { UpdateCafeDto } from './dto/update-cafe.dto';
 import { UpdateTableDto } from './dto/update-table.dto';
 
 @Injectable()
@@ -25,17 +27,40 @@ export class OwnerService {
     @InjectRepository(CafeTable) private readonly tables: Repository<CafeTable>,
     @InjectRepository(Slot) private readonly slots: Repository<Slot>,
     @InjectRepository(Reservation) private readonly reservations: Repository<Reservation>,
+    private readonly cache: AvailabilityCacheService,
   ) {}
 
-  createCafe(ownerId: string, dto: CreateCafeDto): Promise<Cafe> {
-    return this.cafes.save(
+  async createCafe(ownerId: string, dto: CreateCafeDto): Promise<Cafe> {
+    const cafe = await this.cafes.save(
       this.cafes.create({
         name: dto.name,
         area: dto.area,
         description: dto.description ?? '',
+        cuisines: dto.cuisines ?? [],
+        latitude: dto.latitude ?? null,
+        longitude: dto.longitude ?? null,
+        ...(dto.openingHour !== undefined ? { openingHour: dto.openingHour } : {}),
+        ...(dto.closingHour !== undefined ? { closingHour: dto.closingHour } : {}),
         ownerId,
       }),
     );
+    // A new café changes the public list; drop the cache-aside list key
+    // rather than waiting out its TTL (issue #18).
+    await this.cache.invalidateCafeList();
+    return cafe;
+  }
+
+  /** Set owner-editable locator fields — primarily cuisines (issue #18). */
+  async updateCafe(ownerId: string, cafeId: string, dto: UpdateCafeDto): Promise<Cafe> {
+    const cafe = await this.requireOwnedCafe(ownerId, cafeId);
+    if (dto.cuisines !== undefined) cafe.cuisines = dto.cuisines;
+    if (dto.latitude !== undefined) cafe.latitude = dto.latitude;
+    if (dto.longitude !== undefined) cafe.longitude = dto.longitude;
+    if (dto.openingHour !== undefined) cafe.openingHour = dto.openingHour;
+    if (dto.closingHour !== undefined) cafe.closingHour = dto.closingHour;
+    const saved = await this.cafes.save(cafe);
+    await this.cache.invalidateCafeList();
+    return saved;
   }
 
   listMyCafes(ownerId: string): Promise<Cafe[]> {

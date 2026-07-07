@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 import { Cafe } from '../entities/cafe.entity';
 import { AvailabilityEventsService } from '../realtime/availability-events.service';
 import { AvailabilityQueryDto } from './dto/availability-query.dto';
+import { ListCafesQueryDto } from './dto/list-cafes-query.dto';
 import { CafesService, TableAvailability } from './cafes.service';
 
 @Controller('cafes')
@@ -13,8 +14,8 @@ export class CafesController {
   ) {}
 
   @Get()
-  findAll(): Promise<Cafe[]> {
-    return this.cafes.findAll();
+  findAll(@Query() query: ListCafesQueryDto): Promise<Cafe[]> {
+    return this.cafes.findAll(query);
   }
 
   @Get(':id/availability')

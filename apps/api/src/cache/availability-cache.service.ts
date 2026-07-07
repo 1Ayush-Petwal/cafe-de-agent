@@ -66,4 +66,13 @@ export class AvailabilityCacheService {
   async setCafeList(payload: unknown): Promise<void> {
     await this.redis.set('cafes:list', JSON.stringify(payload), 'EX', this.ttlSeconds);
   }
+
+  /**
+   * Drop the cached café list so an owner's create/edit (issue #8/#18) is
+   * reflected on the next read rather than after the TTL. The full list is
+   * cached under one static key, so this is a single DEL.
+   */
+  async invalidateCafeList(): Promise<void> {
+    await this.redis.del('cafes:list');
+  }
 }
