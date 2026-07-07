@@ -130,6 +130,20 @@ export class ReservationsService {
   }
 
   /**
+   * Direct-book strategies that own no transaction of their own (unique, and
+   * optimistic after it wins the CAS): run {@link writeBookingAndCharge} in a
+   * fresh transaction and translate the shared charge/conflict failures.
+   * `bookPessimistic` can't share this — it drives its own queryRunner.
+   */
+  private async bookInTransaction(userId: string, dto: CreateReservationDto): Promise<Reservation> {
+    try {
+      return await this.dataSource.transaction((manager) => this.writeBookingAndCharge(manager, userId, dto));
+    } catch (err) {
+      return this.translateBookingError(err, userId);
+    }
+  }
+
+  /**
    * Issue #17 (PRD area B): a user may hold only one active reservation per
    * café within any rolling 10-hour window. Rejects if the user already has a
    * `booked` reservation at this café whose slot time is strictly within 10
@@ -207,11 +221,7 @@ export class ReservationsService {
 
   /** Unique constraint: insert optimistically, let Postgres reject the loser. */
   private async bookUnique(userId: string, dto: CreateReservationDto): Promise<Reservation> {
-    try {
-      return await this.dataSource.transaction((manager) => this.writeBookingAndCharge(manager, userId, dto));
-    } catch (err) {
-      return this.translateBookingError(err, userId);
-    }
+    return this.bookInTransaction(userId, dto);
   }
 
   /**
@@ -273,11 +283,7 @@ export class ReservationsService {
         continue; // lost the CAS race — retry from a fresh read
       }
 
-      try {
-        return await this.dataSource.transaction((manager) => this.writeBookingAndCharge(manager, userId, dto));
-      } catch (err) {
-        return this.translateBookingError(err, userId);
-      }
+      return this.bookInTransaction(userId, dto);
     }
     throw new ConflictException(TAKEN_MESSAGE);
   }
