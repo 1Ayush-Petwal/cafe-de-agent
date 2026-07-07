@@ -16,6 +16,8 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
+const DEFAULT_ICON = new L.Icon.Default();
+
 const SELECTED_ICON = new L.Icon({
   iconRetinaUrl: markerIcon2x,
   iconUrl: markerIcon,
@@ -54,11 +56,11 @@ function isOpenNow(cafe: CafeDto): boolean {
 
 /** Google Maps universal directions deep link (plain URL, no embed/API key). */
 function directionsUrl(cafe: CafeDto): string {
-  if (cafe.latitude != null && cafe.longitude != null) {
-    return `https://www.google.com/maps/dir/?api=1&destination=${cafe.latitude},${cafe.longitude}`;
-  }
-  const q = encodeURIComponent(`${cafe.name}, ${cafe.area}`);
-  return `https://www.google.com/maps/dir/?api=1&destination=${q}`;
+  const destination =
+    cafe.latitude != null && cafe.longitude != null
+      ? `${cafe.latitude},${cafe.longitude}`
+      : encodeURIComponent(`${cafe.name}, ${cafe.area}`);
+  return `https://www.google.com/maps/dir/?api=1&destination=${destination}`;
 }
 
 /** Pans the map to the selected café without re-mounting the map. */
@@ -189,7 +191,7 @@ export function CafeListPage() {
               <Marker
                 key={cafe.id}
                 position={[cafe.latitude as number, cafe.longitude as number]}
-                icon={cafe.id === selectedId ? SELECTED_ICON : new L.Icon.Default()}
+                icon={cafe.id === selectedId ? SELECTED_ICON : DEFAULT_ICON}
                 eventHandlers={{ click: () => setSelectedId(cafe.id) }}
               >
                 <Popup>
