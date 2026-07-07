@@ -9,7 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { IdempotencyKey } from '../entities/idempotency-key.entity';
 import { NotificationJob } from '../entities/notification-job.entity';
@@ -17,8 +17,9 @@ import { Payment } from '../entities/payment.entity';
 import { ReservationStatus } from '../entities/reservation-status.enum';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
+import { User } from '../entities/user.entity';
+import { WALLET_CHARGE_AMOUNT } from '../entities/wallet.constants';
 import { Hold, HoldsService } from '../holds/holds.service';
-import { PaymentsService } from '../payments/payments.service';
 import { AvailabilityEventsService } from '../realtime/availability-events.service';
 import { BookingStrategy } from './booking-strategy.enum';
 import { ConfirmHoldDto } from './dto/confirm-hold.dto';
@@ -26,7 +27,6 @@ import { CreateHoldDto } from './dto/create-hold.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 
 const TAKEN_MESSAGE = 'This table is already booked for that slot';
-const PAYMENT_FAILED_MESSAGE = 'Payment failed — please try again';
 const UNIQUE_VIOLATION = '23505';
 const OPTIMISTIC_MAX_ATTEMPTS = 10;
 const DEFAULT_HOLD_TTL_SECONDS = 90;
@@ -37,6 +37,9 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof QueryFailedError && (err as unknown as { code?: string }).code === UNIQUE_VIOLATION;
 }
 
+/** Thrown by {@link ReservationsService.chargeWallet} when the conditional decrement affects zero rows. */
+class InsufficientBalanceError extends Error {}
+
 @Injectable()
 export class ReservationsService {
   private readonly holdTtlSeconds: number;
@@ -46,12 +49,84 @@ export class ReservationsService {
     @InjectRepository(CafeTable) private readonly tables: Repository<CafeTable>,
     @InjectRepository(Slot) private readonly slots: Repository<Slot>,
     @InjectRepository(IdempotencyKey) private readonly idempotencyKeys: Repository<IdempotencyKey>,
+    @InjectRepository(User) private readonly users: Repository<User>,
     private readonly dataSource: DataSource,
     private readonly holds: HoldsService,
-    private readonly paymentGateway: PaymentsService,
     private readonly events: AvailabilityEventsService,
   ) {
     this.holdTtlSeconds = Number(process.env.HOLD_TTL_SECONDS) || DEFAULT_HOLD_TTL_SECONDS;
+  }
+
+  /**
+   * Issue #21 (PRD area C): the fake in-app wallet is the payment gateway.
+   * A single conditional UPDATE only decrements rows where the balance is
+   * already ≥ the charge — success or failure is read straight off the
+   * affected-row count, so this is safe under concurrent charges against the
+   * same user without a separate SELECT-then-check race. Must run inside the
+   * same transaction as the reservation/payment write (see call sites) so a
+   * charge can never survive a booking that didn't.
+   */
+  private async chargeWallet(manager: EntityManager, userId: string): Promise<void> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(User)
+      .set({ walletBalance: () => `"walletBalance" - ${WALLET_CHARGE_AMOUNT}` })
+      .where('id = :userId AND "walletBalance" >= :amount', { userId, amount: WALLET_CHARGE_AMOUNT })
+      .execute();
+    if (result.affected !== 1) {
+      throw new InsufficientBalanceError();
+    }
+  }
+
+  private async refundWallet(manager: EntityManager, userId: string): Promise<void> {
+    await manager
+      .createQueryBuilder()
+      .update(User)
+      .set({ walletBalance: () => `"walletBalance" + ${WALLET_CHARGE_AMOUNT}` })
+      .where('id = :userId', { userId })
+      .execute();
+  }
+
+  /** Reads the balance fresh — called after a `chargeWallet` rollback, so this is the pre-charge balance. */
+  private async insufficientBalanceMessage(userId: string): Promise<string> {
+    const user = await this.users.findOneOrFail({ where: { id: userId } });
+    return `Payment failed — insufficient wallet balance (₹${user.walletBalance} remaining)`;
+  }
+
+  /** Translates the two failure modes shared by every write path: no money, or someone else won the race. */
+  private async translateBookingError(err: unknown, userId: string): Promise<never> {
+    if (err instanceof InsufficientBalanceError) {
+      throw new HttpException(await this.insufficientBalanceMessage(userId), HttpStatus.PAYMENT_REQUIRED);
+    }
+    if (isUniqueViolation(err)) {
+      throw new ConflictException(TAKEN_MESSAGE);
+    }
+    throw err;
+  }
+
+  /**
+   * Charges the wallet and writes the reservation + payment atomically
+   * (within the caller's transaction) — shared by every write path (direct
+   * book's three strategies and hold->confirm) so the ₹25 charge and the
+   * Payment record it produces can never diverge between them.
+   */
+  private async writeBookingAndCharge(
+    manager: EntityManager,
+    userId: string,
+    dto: { tableId: string; slotId: string },
+  ): Promise<Reservation> {
+    await this.chargeWallet(manager, userId);
+    const saved = await manager.save(
+      Reservation,
+      manager.create(Reservation, {
+        userId,
+        tableId: dto.tableId,
+        slotId: dto.slotId,
+        status: ReservationStatus.BOOKED,
+      }),
+    );
+    await manager.save(Payment, manager.create(Payment, { reservationId: saved.id, amount: WALLET_CHARGE_AMOUNT }));
+    return saved;
   }
 
   /**
@@ -133,19 +208,9 @@ export class ReservationsService {
   /** Unique constraint: insert optimistically, let Postgres reject the loser. */
   private async bookUnique(userId: string, dto: CreateReservationDto): Promise<Reservation> {
     try {
-      return await this.reservations.save(
-        this.reservations.create({
-          userId,
-          tableId: dto.tableId,
-          slotId: dto.slotId,
-          status: ReservationStatus.BOOKED,
-        }),
-      );
+      return await this.dataSource.transaction((manager) => this.writeBookingAndCharge(manager, userId, dto));
     } catch (err) {
-      if (isUniqueViolation(err)) {
-        throw new ConflictException(TAKEN_MESSAGE);
-      }
-      throw err;
+      return this.translateBookingError(err, userId);
     }
   }
 
@@ -169,21 +234,12 @@ export class ReservationsService {
         throw new ConflictException(TAKEN_MESSAGE);
       }
 
-      const reservation = queryRunner.manager.create(Reservation, {
-        userId,
-        tableId: dto.tableId,
-        slotId: dto.slotId,
-        status: ReservationStatus.BOOKED,
-      });
-      const saved = await queryRunner.manager.save(reservation);
+      const saved = await this.writeBookingAndCharge(queryRunner.manager, userId, dto);
       await queryRunner.commitTransaction();
       return saved;
     } catch (err) {
       await queryRunner.rollbackTransaction();
-      if (isUniqueViolation(err)) {
-        throw new ConflictException(TAKEN_MESSAGE);
-      }
-      throw err;
+      return this.translateBookingError(err, userId);
     } finally {
       await queryRunner.release();
     }
@@ -218,19 +274,9 @@ export class ReservationsService {
       }
 
       try {
-        return await this.reservations.save(
-          this.reservations.create({
-            userId,
-            tableId: dto.tableId,
-            slotId: dto.slotId,
-            status: ReservationStatus.BOOKED,
-          }),
-        );
+        return await this.dataSource.transaction((manager) => this.writeBookingAndCharge(manager, userId, dto));
       } catch (err) {
-        if (isUniqueViolation(err)) {
-          throw new ConflictException(TAKEN_MESSAGE);
-        }
-        throw err;
+        return this.translateBookingError(err, userId);
       }
     }
     throw new ConflictException(TAKEN_MESSAGE);
@@ -359,11 +405,12 @@ export class ReservationsService {
    * re-held the slot in the gap, the token no longer matches and this
    * fails cleanly instead of confirming a slot we no longer own.
    *
-   * The mock charge (issue #5) runs after the hold is consumed and before
-   * the reservation is written: the hold key is already gone by the time we
-   * know the payment outcome, so a failed charge needs no separate
-   * "release the hold" step — the slot is already free — and simply leaves
-   * no reservation or payment row behind.
+   * The wallet charge (issue #21) runs inside the same transaction as the
+   * reservation/payment write, after the hold is consumed: the hold key is
+   * already gone by the time the charge is attempted, so an insufficient
+   * balance needs no separate "release the hold" step — the slot is already
+   * free — and simply leaves no reservation or payment row behind (the whole
+   * transaction rolls back).
    */
   private async executeConfirm(userId: string, dto: ConfirmHoldDto): Promise<Reservation> {
     // Authoritative re-check of the 10-hour window (issue #17): the hold may
@@ -379,24 +426,10 @@ export class ReservationsService {
       throw new GoneException('Your hold expired or was already used — please try again');
     }
 
-    const charged = await this.paymentGateway.charge();
-    if (!charged) {
-      throw new HttpException(PAYMENT_FAILED_MESSAGE, HttpStatus.PAYMENT_REQUIRED);
-    }
-
     let reservation: Reservation;
     try {
       reservation = await this.dataSource.transaction(async (manager) => {
-        const saved = await manager.save(
-          Reservation,
-          manager.create(Reservation, {
-            userId,
-            tableId: dto.tableId,
-            slotId: dto.slotId,
-            status: ReservationStatus.BOOKED,
-          }),
-        );
-        await manager.save(Payment, manager.create(Payment, { reservationId: saved.id }));
+        const saved = await this.writeBookingAndCharge(manager, userId, dto);
         // Transactional outbox (issue #6): the notify job commits atomically
         // with the booking, so a confirmed reservation can never end up
         // without one — the worker (a separate process) drains this queue
@@ -412,10 +445,7 @@ export class ReservationsService {
         return saved;
       });
     } catch (err) {
-      if (isUniqueViolation(err)) {
-        throw new ConflictException(TAKEN_MESSAGE);
-      }
-      throw err;
+      return this.translateBookingError(err, userId);
     }
 
     const table = await this.tables.findOneOrFail({ where: { id: dto.tableId } });
@@ -444,8 +474,17 @@ export class ReservationsService {
     if (reservation.userId !== userId) {
       throw new ForbiddenException('You can only cancel your own reservations');
     }
-    reservation.status = ReservationStatus.CANCELLED;
-    await this.reservations.save(reservation);
+    // Idempotent: a reservation is only ever charged once (booked), so it
+    // should only ever be refunded once — cancelling an already-cancelled
+    // reservation is a no-op rather than a second ₹25 refund (issue #21).
+    if (reservation.status !== ReservationStatus.BOOKED) {
+      return;
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(Reservation, { id: reservation.id }, { status: ReservationStatus.CANCELLED });
+      await this.refundWallet(manager, userId);
+    });
 
     const table = await this.tables.findOneOrFail({ where: { id: reservation.tableId } });
     await this.events.publish({

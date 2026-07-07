@@ -8,9 +8,9 @@ import { LlmTurn } from '../src/agent/llm/agent-llm.types';
 import { HoldsService } from '../src/holds/holds.service';
 import { AgentWorkflow } from '../src/entities/agent-workflow.entity';
 import { Payment } from '../src/entities/payment.entity';
-import { PaymentsService } from '../src/payments/payments.service';
 import { Reservation } from '../src/entities/reservation.entity';
 import { Slot } from '../src/entities/slot.entity';
+import { User } from '../src/entities/user.entity';
 import { REDIS_CLIENT } from '../src/redis/redis.constants';
 import { createTestApp, Fixture, seedFixture, truncateAll } from './utils/test-app';
 
@@ -20,6 +20,10 @@ async function signup(app: INestApplication, email: string): Promise<string> {
     .send({ email, password: 'hunter2222' })
     .expect(201);
   return res.body.accessToken;
+}
+
+async function drainWallet(app: INestApplication, email: string): Promise<void> {
+  await app.get(DataSource).getRepository(User).update({ email }, { walletBalance: 0 });
 }
 
 function findFunctionResponse(history: LlmTurn[], name: string): Record<string, unknown> {
@@ -42,7 +46,6 @@ describe('Agent under failure (e2e)', () => {
   let fixture: Fixture;
   let worker: AgentWorkerService;
   let llm: AgentLlmClient;
-  let payments: PaymentsService;
   let redis: Redis;
   const date = '2026-08-01';
 
@@ -50,20 +53,17 @@ describe('Agent under failure (e2e)', () => {
     app = await createTestApp();
     worker = app.get(AgentWorkerService);
     llm = app.get(AgentLlmClient);
-    payments = app.get(PaymentsService);
     redis = app.get(REDIS_CLIENT);
   });
 
   beforeEach(async () => {
     llm.clearScript();
-    payments.setForceFailure(false);
     await truncateAll(app);
     fixture = await seedFixture(app);
     await redis.flushdb();
   });
 
   afterAll(async () => {
-    payments.setForceFailure(false);
     await app.close();
   });
 
@@ -104,7 +104,7 @@ describe('Agent under failure (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(201);
 
-    payments.setForceFailure(true);
+    await drainWallet(app, 'alice@example.com');
     await worker.processOnce();
 
     const failed = await request(app.getHttpServer())
@@ -120,7 +120,6 @@ describe('Agent under failure (e2e)', () => {
 
     // The hold was consumed (and thus released) before the charge ran — the
     // slot is free again, with no separate compensation step needed.
-    payments.setForceFailure(false);
     const bob = await signup(app, 'bob@example.com');
     await request(app.getHttpServer())
       .post('/reservations/hold')

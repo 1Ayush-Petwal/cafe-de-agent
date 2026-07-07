@@ -12,7 +12,7 @@ const SALT_ROUNDS = 10;
 
 export interface AuthResult {
   accessToken: string;
-  user: { id: string; email: string; role: UserRole };
+  user: { id: string; email: string; role: UserRole; walletBalance: number };
 }
 
 @Injectable()
@@ -48,6 +48,9 @@ export class AuthService {
 
   private issueToken(user: User): AuthResult {
     const accessToken = this.jwt.sign({ sub: user.id, email: user.email, role: user.role });
-    return { accessToken, user: { id: user.id, email: user.email, role: user.role } };
+    return {
+      accessToken,
+      user: { id: user.id, email: user.email, role: user.role, walletBalance: user.walletBalance },
+    };
   }
 }

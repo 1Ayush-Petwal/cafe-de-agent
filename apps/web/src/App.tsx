@@ -39,6 +39,7 @@ export function App() {
                 </>
               )}
               <span className="user-email">{user?.email}</span>
+              <span className="wallet-balance">₹{user?.walletBalance}</span>
               <button onClick={logout}>Log out</button>
             </>
           ) : (

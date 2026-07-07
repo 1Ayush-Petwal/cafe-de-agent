@@ -6,18 +6,17 @@ import { IdempotencyKey } from '../entities/idempotency-key.entity';
 import { Payment } from '../entities/payment.entity';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
+import { User } from '../entities/user.entity';
 import { HoldsModule } from '../holds/holds.module';
-import { PaymentsModule } from '../payments/payments.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { ReservationsController } from './reservations.controller';
 import { ReservationsService } from './reservations.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Reservation, CafeTable, Slot, Payment, IdempotencyKey]),
+    TypeOrmModule.forFeature([Reservation, CafeTable, Slot, Payment, IdempotencyKey, User]),
     AuthModule,
     HoldsModule,
-    PaymentsModule,
     RealtimeModule,
   ],
   controllers: [ReservationsController],

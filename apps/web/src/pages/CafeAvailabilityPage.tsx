@@ -13,7 +13,7 @@ function formatSlotTime(iso: string): string {
 
 export function CafeAvailabilityPage() {
   const { cafeId } = useParams<{ cafeId: string }>();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, adjustWalletBalance } = useAuth();
   const navigate = useNavigate();
   const [date, setDate] = useState(todayIso());
   const [tables, setTables] = useState<TableAvailabilityDto[]>([]);
@@ -91,6 +91,7 @@ export function CafeAvailabilityPage() {
     setError(null);
     try {
       await api.confirmHold(hold.holdId, hold.tableId, hold.slotId, confirmKey);
+      adjustWalletBalance(-25);
       setHold(null);
       setConfirmKey(null);
       load();
@@ -118,7 +119,7 @@ export function CafeAvailabilityPage() {
             Table held — confirm within <strong>{secondsLeft}s</strong>
           </span>
           <button disabled={confirming} onClick={handleConfirm}>
-            {confirming ? '…' : 'Confirm booking'}
+            {confirming ? '…' : 'Confirm — ₹25'}
           </button>
         </div>
       )}

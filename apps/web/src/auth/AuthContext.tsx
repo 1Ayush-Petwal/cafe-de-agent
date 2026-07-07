@@ -5,6 +5,7 @@ interface AuthUser {
   id: string;
   email: string;
   role: string;
+  walletBalance: number;
 }
 
 interface AuthContextValue {
@@ -13,6 +14,10 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, role?: 'customer' | 'owner') => Promise<void>;
   logout: () => void;
+  // Issue #21: the wallet balance in the nav header is seeded from login/signup
+  // and there's no GET /auth/me to refresh it, so confirm/cancel apply their
+  // known ₹25 effect locally rather than showing a stale number until next login.
+  adjustWalletBalance: (delta: number) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -43,6 +48,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(null);
         localStorage.removeItem(USER_KEY);
         setUser(null);
+      },
+      adjustWalletBalance: (delta) => {
+        setUser((current) => {
+          if (!current) return current;
+          const updated = { ...current, walletBalance: current.walletBalance + delta };
+          localStorage.setItem(USER_KEY, JSON.stringify(updated));
+          return updated;
+        });
       },
     }),
     [user],

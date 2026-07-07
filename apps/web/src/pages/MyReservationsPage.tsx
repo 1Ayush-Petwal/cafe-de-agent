@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { ApiError, api, ReservationDto } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 
 function formatSlotTime(iso: string): string {
   return new Date(iso).toLocaleString([], { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' });
 }
 
 export function MyReservationsPage() {
+  const { adjustWalletBalance } = useAuth();
   const [reservations, setReservations] = useState<ReservationDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +27,7 @@ export function MyReservationsPage() {
     setError(null);
     try {
       await api.cancel(id);
+      adjustWalletBalance(25);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not cancel');

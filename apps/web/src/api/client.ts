@@ -36,15 +36,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const body = await res.json().catch(() => ({ message: res.statusText }));
     throw new ApiError(res.status, body.message ?? res.statusText);
   }
-  if (res.status === 204) {
-    return undefined as T;
-  }
-  return res.json() as Promise<T>;
+  // A void-returning Nest handler (e.g. DELETE /reservations/:id) sends 200
+  // with an empty body, not 204 — res.json() on empty text throws, so check
+  // the text is non-empty before parsing rather than special-casing 204.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export interface AuthResponse {
   accessToken: string;
-  user: { id: string; email: string; role: string };
+  user: { id: string; email: string; role: string; walletBalance: number };
 }
 
 export interface CafeDto {

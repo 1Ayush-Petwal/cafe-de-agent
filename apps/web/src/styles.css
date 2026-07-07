@@ -42,6 +42,12 @@ nav a {
   font-size: 0.9rem;
 }
 
+.wallet-balance {
+  color: #3a2a1a;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
 .auth-page form {
   display: flex;
   flex-direction: column;
