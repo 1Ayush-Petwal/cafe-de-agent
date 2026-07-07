@@ -52,6 +52,20 @@ export interface CafeDto {
   name: string;
   area: string;
   description: string;
+  latitude: number | null;
+  longitude: number | null;
+  region: string;
+  openingHour: number;
+  closingHour: number;
+  cuisines: string[];
+  rating: number;
+  ratingCount: number;
+}
+
+export interface ListCafesParams {
+  region?: string;
+  cuisine?: string;
+  sort?: 'rating';
 }
 
 export interface AvailabilitySlotDto {
@@ -127,7 +141,14 @@ export const api = {
     }),
   login: (email: string, password: string) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
-  listCafes: () => request<CafeDto[]>('/cafes'),
+  listCafes: (params: ListCafesParams = {}) => {
+    const qs = new URLSearchParams();
+    if (params.region) qs.set('region', params.region);
+    if (params.cuisine) qs.set('cuisine', params.cuisine);
+    if (params.sort) qs.set('sort', params.sort);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<CafeDto[]>(`/cafes${suffix}`);
+  },
   getAvailability: (cafeId: string, date: string) =>
     request<TableAvailabilityDto[]>(`/cafes/${cafeId}/availability?date=${date}`),
   hold: (tableId: string, slotId: string) =>
@@ -155,8 +176,27 @@ export const api = {
     return () => source.close();
   },
   ownerListCafes: () => request<CafeDto[]>('/owner/cafes'),
-  ownerCreateCafe: (name: string, area: string, description?: string) =>
-    request<CafeDto>('/owner/cafes', { method: 'POST', body: JSON.stringify({ name, area, description }) }),
+  ownerCreateCafe: (
+    dto: {
+      name: string;
+      area: string;
+      description?: string;
+      latitude?: number;
+      longitude?: number;
+      cuisines?: string[];
+    },
+  ) => request<CafeDto>('/owner/cafes', { method: 'POST', body: JSON.stringify(dto) }),
+  // Issue #18: owner sets locator fields (chiefly cuisines) on their café.
+  ownerUpdateCafe: (
+    cafeId: string,
+    dto: Partial<{
+      cuisines: string[];
+      latitude: number;
+      longitude: number;
+      openingHour: number;
+      closingHour: number;
+    }>,
+  ) => request<CafeDto>(`/owner/cafes/${cafeId}`, { method: 'PATCH', body: JSON.stringify(dto) }),
   ownerListTables: (cafeId: string) => request<OwnerTableDto[]>(`/owner/cafes/${cafeId}/tables`),
   ownerCreateTable: (cafeId: string, label: string, capacity: number) =>
     request<OwnerTableDto>(`/owner/cafes/${cafeId}/tables`, {

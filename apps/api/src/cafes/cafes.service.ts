@@ -22,6 +22,12 @@ export interface TableAvailability {
   slots: AvailabilitySlot[];
 }
 
+export interface CafeListFilters {
+  region?: string;
+  cuisine?: string;
+  sort?: 'rating';
+}
+
 @Injectable()
 export class CafesService {
   constructor(
@@ -38,14 +44,29 @@ export class CafesService {
    * absorbs read traffic; the list only changes when an owner creates a
    * café (rare), so no event-based invalidation is needed here (contrast
    * getAvailability, which booking events do invalidate).
+   *
+   * Issue #18: store-locator filters (region/cuisine) and rating sort are
+   * applied *after* the cache read against the full unfiltered list. The
+   * cache always holds the whole list under one key — filtering here rather
+   * than per-filter cache keys avoids cache-key explosion for a tiny list.
    */
-  async findAll(): Promise<Cafe[]> {
-    const cached = await this.availabilityCache.getCafeList<Cafe[]>();
-    if (cached) {
-      return cached;
+  async findAll(filters: CafeListFilters = {}): Promise<Cafe[]> {
+    let cafes = await this.availabilityCache.getCafeList<Cafe[]>();
+    if (!cafes) {
+      cafes = await this.cafes.find({ order: { name: 'ASC' } });
+      await this.availabilityCache.setCafeList(cafes);
     }
-    const cafes = await this.cafes.find({ order: { name: 'ASC' } });
-    await this.availabilityCache.setCafeList(cafes);
+
+    if (filters.region) {
+      cafes = cafes.filter((c) => c.region === filters.region);
+    }
+    if (filters.cuisine) {
+      cafes = cafes.filter((c) => (c.cuisines ?? []).includes(filters.cuisine!));
+    }
+    if (filters.sort === 'rating') {
+      // Copy before sorting so we never mutate the cached array in place.
+      cafes = [...cafes].sort((a, b) => b.rating - a.rating);
+    }
     return cafes;
   }
 

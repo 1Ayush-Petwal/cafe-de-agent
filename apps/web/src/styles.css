@@ -167,3 +167,101 @@ button:disabled {
   background: #f3e3e3;
   color: #6b1e1e;
 }
+
+/* Store locator home page (issue #18) */
+.locator-search {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  margin: 0.5rem 0 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.locator-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 1.4fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.locator-cards {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.locator-card {
+  padding: 0.85rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  display: grid;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.locator-card.selected {
+  border-color: #2f6fed;
+  box-shadow: 0 0 0 2px rgba(47, 111, 237, 0.2);
+}
+
+.locator-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.locator-card .rating {
+  color: #b8860b;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.locator-meta {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: #555;
+}
+
+.locator-meta .open {
+  color: #1e6b1e;
+  font-weight: 600;
+}
+
+.locator-meta .closed {
+  color: #b3261e;
+  font-weight: 600;
+}
+
+.cuisines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.cuisine-chip {
+  background: #eef1f6;
+  color: #444;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+}
+
+.directions-link {
+  font-size: 0.8rem;
+  color: #2f6fed;
+  justify-self: start;
+}
+
+.locator-map {
+  height: 70vh;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #ddd;
+}
+
+.cafe-pin-selected {
+  filter: hue-rotate(140deg) saturate(1.6);
+}

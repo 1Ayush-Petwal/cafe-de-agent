@@ -17,6 +17,9 @@ export function OwnerDashboardPage() {
   const [cafeName, setCafeName] = useState('');
   const [cafeArea, setCafeArea] = useState('');
 
+  const [cuisinesInput, setCuisinesInput] = useState('');
+  const [cuisinesMessage, setCuisinesMessage] = useState<string | null>(null);
+
   const [tables, setTables] = useState<OwnerTableDto[]>([]);
   const [tableLabel, setTableLabel] = useState('');
   const [tableCapacity, setTableCapacity] = useState(2);
@@ -61,14 +64,17 @@ export function OwnerDashboardPage() {
     if (!selectedCafeId) return;
     loadTables(selectedCafeId);
     loadBookings(selectedCafeId, bookingsDate);
+    const cafe = cafes.find((c) => c.id === selectedCafeId);
+    setCuisinesInput((cafe?.cuisines ?? []).join(', '));
+    setCuisinesMessage(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCafeId]);
+  }, [selectedCafeId, cafes]);
 
   const handleCreateCafe = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     try {
-      const cafe = await api.ownerCreateCafe(cafeName, cafeArea);
+      const cafe = await api.ownerCreateCafe({ name: cafeName, area: cafeArea });
       setCafeName('');
       setCafeArea('');
       setCafes((prev) => [...prev, cafe]);
@@ -100,6 +106,24 @@ export function OwnerDashboardPage() {
       loadTables(selectedCafeId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not update table');
+    }
+  };
+
+  const handleSaveCuisines = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!selectedCafeId) return;
+    setError(null);
+    setCuisinesMessage(null);
+    const cuisines = cuisinesInput
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    try {
+      const updated = await api.ownerUpdateCafe(selectedCafeId, { cuisines });
+      setCafes((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setCuisinesMessage('Cuisines saved.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save cuisines');
     }
   };
 
@@ -161,6 +185,20 @@ export function OwnerDashboardPage() {
 
           {selectedCafeId && (
             <>
+              <h2>Cuisines</h2>
+              <form onSubmit={handleSaveCuisines}>
+                <label>
+                  Cuisines (comma-separated)
+                  <input
+                    value={cuisinesInput}
+                    placeholder="Italian, Continental, Asian"
+                    onChange={(e) => setCuisinesInput(e.target.value)}
+                  />
+                </label>
+                <button type="submit">Save cuisines</button>
+              </form>
+              {cuisinesMessage && <p>{cuisinesMessage}</p>}
+
               <h2>Tables</h2>
               <ul className="reservation-list">
                 {tables.map((table) => (

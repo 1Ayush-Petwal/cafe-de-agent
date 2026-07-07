@@ -13,6 +13,7 @@ import { AvailabilityQueryDto } from '../cafes/dto/availability-query.dto';
 import { CreateCafeDto } from './dto/create-cafe.dto';
 import { CreateTableDto } from './dto/create-table.dto';
 import { GenerateSlotsDto } from './dto/generate-slots.dto';
+import { UpdateCafeDto } from './dto/update-cafe.dto';
 import { UpdateTableDto } from './dto/update-table.dto';
 import { OwnerService } from './owner.service';
 
@@ -30,6 +31,15 @@ export class OwnerController {
   @Get('cafes')
   listMyCafes(@CurrentUser() user: JwtPayload): Promise<Cafe[]> {
     return this.owner.listMyCafes(user.sub);
+  }
+
+  @Patch('cafes/:cafeId')
+  updateCafe(
+    @CurrentUser() user: JwtPayload,
+    @Param('cafeId') cafeId: string,
+    @Body() dto: UpdateCafeDto,
+  ): Promise<Cafe> {
+    return this.owner.updateCafe(user.sub, cafeId, dto);
   }
 
   @Post('cafes/:cafeId/tables')
