@@ -164,6 +164,31 @@ describe('One reservation per café per 10-hour window (e2e)', () => {
     expect(res.body.message).toContain('2026-08-01T09:00:00.000Z');
   });
 
+  it('does not let the window rule turn a legitimate confirm-retry into a 409 (the booking must not count against itself)', async () => {
+    const token = await signup(app, 'alice@example.com');
+
+    const hold = await request(app.getHttpServer())
+      .post('/reservations/hold')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tableId: fixture.tableId, slotId: fixture.slotId })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/reservations/confirm')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tableId: fixture.tableId, slotId: fixture.slotId, holdId: hold.body.holdId })
+      .expect(201);
+
+    // Retrying the same (now consumed) hold must fail as 410 Gone — the single-
+    // use hold semantics — not as a 409 window conflict against the reservation
+    // this very confirm just wrote.
+    await request(app.getHttpServer())
+      .post('/reservations/confirm')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tableId: fixture.tableId, slotId: fixture.slotId, holdId: hold.body.holdId })
+      .expect(410);
+  });
+
   it('binds the AI booking agent to the same rule (hold via the agent is rejected)', async () => {
     const token = await signup(app, 'alice@example.com');
     // Pre-book the 09:00 slot on table 1.

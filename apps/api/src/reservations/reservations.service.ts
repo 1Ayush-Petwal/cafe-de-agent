@@ -64,8 +64,23 @@ export class ReservationsService {
    * and applied at every write entry point — direct book, hold (fail fast),
    * and confirm (authoritative) — so the AI agent inherits it for free by
    * going through the same service.
+   *
+   * The booking being attempted must not count against itself: the reservation
+   * for this exact (table, slot) is excluded. Without it, the authoritative
+   * confirm-time check would see the reservation a *successful* confirm just
+   * wrote and reject a legitimate retry of that same hold with a 409 window
+   * error instead of the correct 410 Gone (single-use hold). Excluding by the
+   * full (table, slot) identity — not just the slot — keeps a genuine conflict
+   * at the same slot on a *different* table (e.g. a hold taken before a
+   * conflicting booking appeared) correctly rejected.
    */
-  private async assertWithinWindowFree(userId: string, cafeId: string, slotTime: Date): Promise<void> {
+  private async assertWithinWindowFree(
+    userId: string,
+    cafeId: string,
+    tableId: string,
+    slotId: string,
+    slotTime: Date,
+  ): Promise<void> {
     const windowStart = new Date(slotTime.getTime() - BOOKING_WINDOW_MS);
     const windowEnd = new Date(slotTime.getTime() + BOOKING_WINDOW_MS);
     const conflict = await this.reservations
@@ -76,6 +91,10 @@ export class ReservationsService {
       .andWhere('s."cafeId" = :cafeId', { cafeId })
       .andWhere('s."slotTime" > :windowStart', { windowStart })
       .andWhere('s."slotTime" < :windowEnd', { windowEnd })
+      .andWhere('NOT (r."tableId" = :selfTable AND r."slotId" = :selfSlot)', {
+        selfTable: tableId,
+        selfSlot: slotId,
+      })
       .select('s."slotTime"', 'slotTime')
       .getRawOne<{ slotTime: Date }>();
 
@@ -104,7 +123,7 @@ export class ReservationsService {
       throw new NotFoundException('Slot not found for this table');
     }
 
-    await this.assertWithinWindowFree(userId, table.cafeId, slot.slotTime);
+    await this.assertWithinWindowFree(userId, table.cafeId, dto.tableId, dto.slotId, slot.slotTime);
 
     switch (dto.strategy) {
       case BookingStrategy.PESSIMISTIC:
@@ -247,7 +266,7 @@ export class ReservationsService {
 
     // Fail fast before taking the Redis hold — no point walking a customer
     // through checkout for a booking the 10-hour window rule can never allow.
-    await this.assertWithinWindowFree(userId, table.cafeId, slot.slotTime);
+    await this.assertWithinWindowFree(userId, table.cafeId, dto.tableId, dto.slotId, slot.slotTime);
 
     const hold = await this.holds.create(userId, dto.tableId, dto.slotId, this.holdTtlSeconds);
     if (!hold) {
@@ -359,7 +378,7 @@ export class ReservationsService {
     // check. Run before consuming the hold so a rejected confirm leaves the
     // hold intact for a legitimate retry after cancelling the conflict.
     const slot = await this.slots.findOneOrFail({ where: { id: dto.slotId } });
-    await this.assertWithinWindowFree(userId, slot.cafeId, slot.slotTime);
+    await this.assertWithinWindowFree(userId, slot.cafeId, dto.tableId, dto.slotId, slot.slotTime);
 
     const consumed = await this.holds.consume(userId, dto.tableId, dto.slotId, dto.holdId);
     if (!consumed) {

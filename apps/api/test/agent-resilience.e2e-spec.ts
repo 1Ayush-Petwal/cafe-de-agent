@@ -10,6 +10,7 @@ import { AgentWorkflow } from '../src/entities/agent-workflow.entity';
 import { Payment } from '../src/entities/payment.entity';
 import { PaymentsService } from '../src/payments/payments.service';
 import { Reservation } from '../src/entities/reservation.entity';
+import { Slot } from '../src/entities/slot.entity';
 import { REDIS_CLIENT } from '../src/redis/redis.constants';
 import { createTestApp, Fixture, seedFixture, truncateAll } from './utils/test-app';
 
@@ -348,6 +349,14 @@ describe('Agent under failure (e2e)', () => {
 
   it('cannot exceed its per-session cost budget — a second distinct charge in the same workflow is rejected', async () => {
     const token = await signup(app, 'alice@example.com');
+    // Second booking is ≥10h from the first (20:00 vs the fixture's 09:00) so
+    // the issue-#17 window rule allows both — this test is about the cost
+    // budget, not the window: the second (distinct) charge must be stopped by
+    // the idempotency guard, not by the window rule firing first.
+    const slotRepo = app.get(DataSource).getRepository(Slot);
+    const farSlot = await slotRepo.save(
+      slotRepo.create({ cafeId: fixture.cafeId, slotTime: new Date('2026-08-01T20:00:00.000Z') }),
+    );
     // Same deterministic idempotency key (`agent:{workflowId}`) is used for
     // every confirm_hold call within one workflow (issue #9) — a second,
     // materially different confirm attempt reuses that key but hashes to a
@@ -365,7 +374,7 @@ describe('Agent under failure (e2e)', () => {
           },
         };
       },
-      { role: 'model', functionCall: { name: 'hold_table', args: { tableId: fixture.otherTableId, slotId: fixture.slotId } } },
+      { role: 'model', functionCall: { name: 'hold_table', args: { tableId: fixture.otherTableId, slotId: farSlot.id } } },
       (history) => {
         const holds = history.filter((t) => t.functionResponse?.name === 'hold_table');
         const secondHold = holds[holds.length - 1].functionResponse!.response;
@@ -373,7 +382,7 @@ describe('Agent under failure (e2e)', () => {
           role: 'model',
           functionCall: {
             name: 'confirm_hold',
-            args: { tableId: fixture.otherTableId, slotId: fixture.slotId, holdId: secondHold.holdId },
+            args: { tableId: fixture.otherTableId, slotId: farSlot.id, holdId: secondHold.holdId },
           },
         };
       },
