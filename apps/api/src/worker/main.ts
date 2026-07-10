@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AgentWorkerService } from '../agent/agent-worker.service';
 import { OutboxWorkerService } from '../notifications/outbox-worker.service';
+import { WebhookWorkerService } from '../partner/webhook-worker.service';
 import { WorkerModule } from './worker.module';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
@@ -13,6 +14,12 @@ async function bootstrap() {
   notificationWorker.start(outboxPollIntervalMs);
   // eslint-disable-next-line no-console
   console.log(`Notification worker started, polling every ${outboxPollIntervalMs}ms`);
+
+  const webhookWorker = app.get(WebhookWorkerService);
+  const webhookPollIntervalMs = Number(process.env.WEBHOOK_POLL_INTERVAL_MS) || DEFAULT_POLL_INTERVAL_MS;
+  webhookWorker.start(webhookPollIntervalMs);
+  // eslint-disable-next-line no-console
+  console.log(`Webhook worker started, polling every ${webhookPollIntervalMs}ms`);
 
   const agentWorker = app.get(AgentWorkerService);
   const agentPollIntervalMs = Number(process.env.AGENT_POLL_INTERVAL_MS) || DEFAULT_POLL_INTERVAL_MS;

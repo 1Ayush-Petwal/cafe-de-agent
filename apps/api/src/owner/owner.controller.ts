@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt.strategy';
@@ -9,13 +9,15 @@ import { Cafe } from '../entities/cafe.entity';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
 import { UserRole } from '../entities/user-role.enum';
+import { WebhookEndpoint } from '../entities/webhook-endpoint.entity';
 import { AvailabilityQueryDto } from '../cafes/dto/availability-query.dto';
 import { CreateCafeDto } from './dto/create-cafe.dto';
 import { CreateTableDto } from './dto/create-table.dto';
 import { GenerateSlotsDto } from './dto/generate-slots.dto';
+import { RegisterWebhookDto } from './dto/register-webhook.dto';
 import { UpdateCafeDto } from './dto/update-cafe.dto';
 import { UpdateTableDto } from './dto/update-table.dto';
-import { OwnerService } from './owner.service';
+import { GeneratedPartnerApiKey, OwnerService, PartnerApiKeySummary } from './owner.service';
 
 @Controller('owner')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -82,5 +84,47 @@ export class OwnerController {
     @Query() query: AvailabilityQueryDto,
   ): Promise<Reservation[]> {
     return this.owner.bookingsForDay(user.sub, cafeId, query.date);
+  }
+
+  @Post('cafes/:cafeId/partner/keys')
+  generatePartnerApiKey(
+    @CurrentUser() user: JwtPayload,
+    @Param('cafeId') cafeId: string,
+  ): Promise<GeneratedPartnerApiKey> {
+    return this.owner.generatePartnerApiKey(user.sub, cafeId);
+  }
+
+  @Get('cafes/:cafeId/partner/keys')
+  listPartnerApiKeys(
+    @CurrentUser() user: JwtPayload,
+    @Param('cafeId') cafeId: string,
+  ): Promise<PartnerApiKeySummary[]> {
+    return this.owner.listPartnerApiKeys(user.sub, cafeId);
+  }
+
+  @Delete('cafes/:cafeId/partner/keys/:keyId')
+  revokePartnerApiKey(
+    @CurrentUser() user: JwtPayload,
+    @Param('cafeId') cafeId: string,
+    @Param('keyId') keyId: string,
+  ): Promise<void> {
+    return this.owner.revokePartnerApiKey(user.sub, cafeId, keyId);
+  }
+
+  @Get('cafes/:cafeId/partner/webhook')
+  getWebhookEndpoint(
+    @CurrentUser() user: JwtPayload,
+    @Param('cafeId') cafeId: string,
+  ): Promise<WebhookEndpoint | null> {
+    return this.owner.getWebhookEndpoint(user.sub, cafeId);
+  }
+
+  @Post('cafes/:cafeId/partner/webhook')
+  registerWebhookEndpoint(
+    @CurrentUser() user: JwtPayload,
+    @Param('cafeId') cafeId: string,
+    @Body() dto: RegisterWebhookDto,
+  ): Promise<WebhookEndpoint> {
+    return this.owner.registerWebhookEndpoint(user.sub, cafeId, dto);
   }
 }

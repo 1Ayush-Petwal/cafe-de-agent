@@ -1,11 +1,14 @@
+import { randomBytes, createHash } from 'crypto';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { Cafe } from '../entities/cafe.entity';
+import { PartnerApiKey } from '../entities/partner-api-key.entity';
 import { ReservationStatus } from '../entities/reservation-status.enum';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
+import { WebhookEndpoint } from '../entities/webhook-endpoint.entity';
 import {
   OPENING_HOUR_UTC,
   CLOSING_HOUR_UTC,
@@ -17,8 +20,29 @@ import { AvailabilityCacheService } from '../cache/availability-cache.service';
 import { CreateCafeDto } from './dto/create-cafe.dto';
 import { CreateTableDto } from './dto/create-table.dto';
 import { GenerateSlotsDto } from './dto/generate-slots.dto';
+import { RegisterWebhookDto } from './dto/register-webhook.dto';
 import { UpdateCafeDto } from './dto/update-cafe.dto';
 import { UpdateTableDto } from './dto/update-table.dto';
+
+const API_KEY_PREFIX = 'pk_';
+const API_KEY_BYTES = 24;
+const API_KEY_PREFIX_LENGTH = 12;
+
+export interface GeneratedPartnerApiKey {
+  id: string;
+  apiKey: string;
+  keyPrefix: string;
+  createdAt: Date;
+}
+
+/** `keyHash` deliberately never leaves the service — there's no ClassSerializerInterceptor in this app to strip it from a raw entity response. */
+export interface PartnerApiKeySummary {
+  id: string;
+  cafeId: string;
+  keyPrefix: string;
+  revokedAt: Date | null;
+  createdAt: Date;
+}
 
 @Injectable()
 export class OwnerService {
@@ -27,6 +51,8 @@ export class OwnerService {
     @InjectRepository(CafeTable) private readonly tables: Repository<CafeTable>,
     @InjectRepository(Slot) private readonly slots: Repository<Slot>,
     @InjectRepository(Reservation) private readonly reservations: Repository<Reservation>,
+    @InjectRepository(PartnerApiKey) private readonly partnerApiKeys: Repository<PartnerApiKey>,
+    @InjectRepository(WebhookEndpoint) private readonly webhookEndpoints: Repository<WebhookEndpoint>,
     private readonly cache: AvailabilityCacheService,
   ) {}
 
@@ -163,5 +189,63 @@ export class OwnerService {
       relations: ['table', 'slot', 'user'],
       order: { createdAt: 'ASC' },
     });
+  }
+
+  /**
+   * Issue #24 (PRD area G): the raw key is returned exactly once, here, and
+   * never again — only its SHA-256 hash is persisted (`ApiKeyGuard` hashes
+   * an incoming key the same way and looks up by hash). `keyPrefix` is kept
+   * in the clear purely so the dashboard's key list stays identifiable
+   * after this response is gone.
+   */
+  async generatePartnerApiKey(ownerId: string, cafeId: string): Promise<GeneratedPartnerApiKey> {
+    await this.requireOwnedCafe(ownerId, cafeId);
+    const apiKey = `${API_KEY_PREFIX}${randomBytes(API_KEY_BYTES).toString('hex')}`;
+    const keyHash = createHash('sha256').update(apiKey).digest('hex');
+    const keyPrefix = apiKey.slice(0, API_KEY_PREFIX_LENGTH);
+    const saved = await this.partnerApiKeys.save(
+      this.partnerApiKeys.create({ cafeId, keyHash, keyPrefix, revokedAt: null }),
+    );
+    return { id: saved.id, apiKey, keyPrefix, createdAt: saved.createdAt };
+  }
+
+  async listPartnerApiKeys(ownerId: string, cafeId: string): Promise<PartnerApiKeySummary[]> {
+    await this.requireOwnedCafe(ownerId, cafeId);
+    const keys = await this.partnerApiKeys.find({ where: { cafeId }, order: { createdAt: 'DESC' } });
+    return keys.map((key) => ({
+      id: key.id,
+      cafeId: key.cafeId,
+      keyPrefix: key.keyPrefix,
+      revokedAt: key.revokedAt,
+      createdAt: key.createdAt,
+    }));
+  }
+
+  /** Idempotent: revoking an already-revoked key is a no-op rather than bumping revokedAt again. */
+  async revokePartnerApiKey(ownerId: string, cafeId: string, keyId: string): Promise<void> {
+    await this.requireOwnedCafe(ownerId, cafeId);
+    const key = await this.partnerApiKeys.findOne({ where: { id: keyId, cafeId } });
+    if (!key) {
+      throw new NotFoundException('API key not found');
+    }
+    if (!key.revokedAt) {
+      await this.partnerApiKeys.update({ id: key.id }, { revokedAt: new Date() });
+    }
+  }
+
+  /** One endpoint per café — re-registering replaces the URL rather than accumulating rows. */
+  async registerWebhookEndpoint(ownerId: string, cafeId: string, dto: RegisterWebhookDto): Promise<WebhookEndpoint> {
+    await this.requireOwnedCafe(ownerId, cafeId);
+    const existing = await this.webhookEndpoints.findOne({ where: { cafeId } });
+    if (existing) {
+      existing.url = dto.url;
+      return this.webhookEndpoints.save(existing);
+    }
+    return this.webhookEndpoints.save(this.webhookEndpoints.create({ cafeId, url: dto.url }));
+  }
+
+  async getWebhookEndpoint(ownerId: string, cafeId: string): Promise<WebhookEndpoint | null> {
+    await this.requireOwnedCafe(ownerId, cafeId);
+    return this.webhookEndpoints.findOne({ where: { cafeId } });
   }
 }

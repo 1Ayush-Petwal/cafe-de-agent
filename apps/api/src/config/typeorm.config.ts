@@ -5,10 +5,13 @@ import { Cafe } from '../entities/cafe.entity';
 import { IdempotencyKey } from '../entities/idempotency-key.entity';
 import { NotificationJob } from '../entities/notification-job.entity';
 import { Notification } from '../entities/notification.entity';
+import { PartnerApiKey } from '../entities/partner-api-key.entity';
 import { Payment } from '../entities/payment.entity';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
 import { User } from '../entities/user.entity';
+import { WebhookEndpoint } from '../entities/webhook-endpoint.entity';
+import { WebhookJob } from '../entities/webhook-job.entity';
 
 export function buildTypeOrmConfig(): TypeOrmModuleOptions {
   return {
@@ -25,6 +28,9 @@ export function buildTypeOrmConfig(): TypeOrmModuleOptions {
       Notification,
       IdempotencyKey,
       AgentWorkflow,
+      PartnerApiKey,
+      WebhookEndpoint,
+      WebhookJob,
     ],
     // No migrations yet at M0 (tracer bullet); schema is generated from
     // entities. Migrations arrive when the schema needs to survive prod data.

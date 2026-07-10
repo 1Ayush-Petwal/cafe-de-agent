@@ -19,6 +19,8 @@ import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
 import { User } from '../entities/user.entity';
 import { WALLET_CHARGE_AMOUNT } from '../entities/wallet.constants';
+import { WebhookEventType } from '../entities/webhook-event-type.enum';
+import { WebhookJob } from '../entities/webhook-job.entity';
 import { Hold, HoldsService } from '../holds/holds.service';
 import { AvailabilityEventsService } from '../realtime/availability-events.service';
 import { BookingStrategy } from './booking-strategy.enum';
@@ -105,10 +107,49 @@ export class ReservationsService {
   }
 
   /**
+   * Partner API outbox (issue #24, PRD area G): a second consumer of the
+   * same transactional-outbox pattern `notification_jobs` established
+   * (issue #6) — written in the same transaction as the reservation write
+   * or cancel, so a booking event can never be lost even if the process
+   * crashes right after commit. A dedicated worker (WebhookWorkerService)
+   * drains this queue independently, so a partner's downtime never slows or
+   * fails a booking. `reservation` is a plain (tableId, slotId) reference —
+   * the table/slot lookups run against the transaction's own manager so a
+   * cancel enqueued alongside a status flip sees the same snapshot.
+   */
+  private async enqueueWebhookJob(
+    manager: EntityManager,
+    eventType: WebhookEventType,
+    reservation: Pick<Reservation, 'id' | 'tableId' | 'slotId'>,
+  ): Promise<void> {
+    const table = await manager.findOneOrFail(CafeTable, { where: { id: reservation.tableId } });
+    const slot = await manager.findOneOrFail(Slot, { where: { id: reservation.slotId } });
+    await manager.save(
+      WebhookJob,
+      manager.create(WebhookJob, {
+        cafeId: table.cafeId,
+        reservationId: reservation.id,
+        eventType,
+        payload: {
+          event: eventType,
+          reservationId: reservation.id,
+          cafeId: table.cafeId,
+          tableId: reservation.tableId,
+          slotId: reservation.slotId,
+          slotTime: slot.slotTime.toISOString(),
+        },
+      }),
+    );
+  }
+
+  /**
    * Charges the wallet and writes the reservation + payment atomically
    * (within the caller's transaction) — shared by every write path (direct
    * book's three strategies and hold->confirm) so the ₹25 charge and the
-   * Payment record it produces can never diverge between them.
+   * Payment record it produces can never diverge between them. Every path
+   * that lands a reservation in `booked` also enqueues the partner
+   * `booking.created` webhook here, so direct book can't become a free side
+   * door around partner sync the way it once was around the wallet charge.
    */
   private async writeBookingAndCharge(
     manager: EntityManager,
@@ -126,6 +167,7 @@ export class ReservationsService {
       }),
     );
     await manager.save(Payment, manager.create(Payment, { reservationId: saved.id, amount: WALLET_CHARGE_AMOUNT }));
+    await this.enqueueWebhookJob(manager, WebhookEventType.BOOKING_CREATED, saved);
     return saved;
   }
 
@@ -490,6 +532,7 @@ export class ReservationsService {
     await this.dataSource.transaction(async (manager) => {
       await manager.update(Reservation, { id: reservation.id }, { status: ReservationStatus.CANCELLED });
       await this.refundWallet(manager, userId);
+      await this.enqueueWebhookJob(manager, WebhookEventType.BOOKING_CANCELLED, reservation);
     });
 
     const table = await this.tables.findOneOrFail({ where: { id: reservation.tableId } });

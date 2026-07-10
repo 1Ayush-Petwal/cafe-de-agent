@@ -140,6 +140,23 @@ export interface OwnerBookingDto {
   user: { id: string; email: string };
 }
 
+/** Issue #24: `apiKey` is present only on the response to generation — it is never retrievable again. */
+export interface PartnerApiKeyDto {
+  id: string;
+  keyPrefix: string;
+  revokedAt: string | null;
+  createdAt: string;
+  apiKey?: string;
+}
+
+export interface WebhookEndpointDto {
+  id: string;
+  cafeId: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const api = {
   signup: (email: string, password: string, role?: 'customer' | 'owner') =>
     request<AuthResponse>('/auth/signup', {
@@ -233,6 +250,20 @@ export const api = {
     }),
   ownerBookingsForDay: (cafeId: string, date: string) =>
     request<OwnerBookingDto[]>(`/owner/cafes/${cafeId}/bookings?date=${date}`),
+  // Issue #24: Partner API v1 — per-café key lifecycle and webhook registration.
+  ownerListPartnerApiKeys: (cafeId: string) =>
+    request<PartnerApiKeyDto[]>(`/owner/cafes/${cafeId}/partner/keys`),
+  ownerGeneratePartnerApiKey: (cafeId: string) =>
+    request<PartnerApiKeyDto>(`/owner/cafes/${cafeId}/partner/keys`, { method: 'POST' }),
+  ownerRevokePartnerApiKey: (cafeId: string, keyId: string) =>
+    request<void>(`/owner/cafes/${cafeId}/partner/keys/${keyId}`, { method: 'DELETE' }),
+  ownerGetWebhookEndpoint: (cafeId: string) =>
+    request<WebhookEndpointDto | null>(`/owner/cafes/${cafeId}/partner/webhook`),
+  ownerRegisterWebhookEndpoint: (cafeId: string, url: string) =>
+    request<WebhookEndpointDto>(`/owner/cafes/${cafeId}/partner/webhook`, {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
   startAgentWorkflow: (message: string) =>
     request<{ id: string; status: string }>('/agent/workflows', {
       method: 'POST',

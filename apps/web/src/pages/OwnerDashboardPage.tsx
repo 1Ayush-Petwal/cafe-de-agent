@@ -1,5 +1,13 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { ApiError, CafeDto, OwnerBookingDto, OwnerTableDto, api } from '../api/client';
+import {
+  ApiError,
+  CafeDto,
+  OwnerBookingDto,
+  OwnerTableDto,
+  PartnerApiKeyDto,
+  WebhookEndpointDto,
+  api,
+} from '../api/client';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -34,6 +42,12 @@ export function OwnerDashboardPage() {
   const [bookingsDate, setBookingsDate] = useState(todayIso());
   const [bookings, setBookings] = useState<OwnerBookingDto[]>([]);
 
+  const [partnerKeys, setPartnerKeys] = useState<PartnerApiKeyDto[]>([]);
+  const [newApiKey, setNewApiKey] = useState<string | null>(null);
+  const [webhookEndpoint, setWebhookEndpoint] = useState<WebhookEndpointDto | null>(null);
+  const [webhookUrlInput, setWebhookUrlInput] = useState('');
+  const [webhookMessage, setWebhookMessage] = useState<string | null>(null);
+
   const loadCafes = () => {
     api
       .ownerListCafes()
@@ -60,13 +74,34 @@ export function OwnerDashboardPage() {
       .catch(() => setError('Could not load bookings'));
   };
 
+  const loadPartnerKeys = (cafeId: string) => {
+    api
+      .ownerListPartnerApiKeys(cafeId)
+      .then(setPartnerKeys)
+      .catch(() => setError('Could not load partner API keys'));
+  };
+
+  const loadWebhookEndpoint = (cafeId: string) => {
+    api
+      .ownerGetWebhookEndpoint(cafeId)
+      .then((endpoint) => {
+        setWebhookEndpoint(endpoint);
+        setWebhookUrlInput(endpoint?.url ?? '');
+      })
+      .catch(() => setError('Could not load webhook endpoint'));
+  };
+
   useEffect(() => {
     if (!selectedCafeId) return;
     loadTables(selectedCafeId);
     loadBookings(selectedCafeId, bookingsDate);
+    loadPartnerKeys(selectedCafeId);
+    loadWebhookEndpoint(selectedCafeId);
     const cafe = cafes.find((c) => c.id === selectedCafeId);
     setCuisinesInput((cafe?.cuisines ?? []).join(', '));
     setCuisinesMessage(null);
+    setNewApiKey(null);
+    setWebhookMessage(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCafeId, cafes]);
 
@@ -149,6 +184,43 @@ export function OwnerDashboardPage() {
   const handleBookingsDateChange = (date: string) => {
     setBookingsDate(date);
     if (selectedCafeId) loadBookings(selectedCafeId, date);
+  };
+
+  const handleGenerateApiKey = async () => {
+    if (!selectedCafeId) return;
+    setError(null);
+    try {
+      const generated = await api.ownerGeneratePartnerApiKey(selectedCafeId);
+      setNewApiKey(generated.apiKey ?? null);
+      loadPartnerKeys(selectedCafeId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not generate API key');
+    }
+  };
+
+  const handleRevokeApiKey = async (keyId: string) => {
+    if (!selectedCafeId) return;
+    setError(null);
+    try {
+      await api.ownerRevokePartnerApiKey(selectedCafeId, keyId);
+      loadPartnerKeys(selectedCafeId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not revoke API key');
+    }
+  };
+
+  const handleRegisterWebhook = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!selectedCafeId) return;
+    setError(null);
+    setWebhookMessage(null);
+    try {
+      const endpoint = await api.ownerRegisterWebhookEndpoint(selectedCafeId, webhookUrlInput);
+      setWebhookEndpoint(endpoint);
+      setWebhookMessage('Webhook endpoint saved.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save webhook endpoint');
+    }
   };
 
   return (
@@ -303,6 +375,51 @@ export function OwnerDashboardPage() {
                   ))}
                 </ul>
               )}
+
+              <h2>Partner API</h2>
+              <p>
+                Let your café's local app receive booking webhooks and pull bookings/availability via
+                the Partner API. Issue #24.
+              </p>
+
+              <h3>API keys</h3>
+              {newApiKey && (
+                <p className="notice">
+                  New key: <code>{newApiKey}</code> — copy it now, it won't be shown again.
+                </p>
+              )}
+              {partnerKeys.length === 0 ? (
+                <p>No API keys yet.</p>
+              ) : (
+                <ul className="reservation-list">
+                  {partnerKeys.map((key) => (
+                    <li key={key.id}>
+                      <code>{key.keyPrefix}…</code> —{' '}
+                      <span className={`status ${key.revokedAt ? 'status-cancelled' : 'status-booked'}`}>
+                        {key.revokedAt ? 'revoked' : 'active'}
+                      </span>
+                      {!key.revokedAt && <button onClick={() => handleRevokeApiKey(key.id)}>Revoke</button>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button onClick={handleGenerateApiKey}>Generate new key</button>
+
+              <h3>Webhook endpoint</h3>
+              <form onSubmit={handleRegisterWebhook}>
+                <label>
+                  Your local app's URL
+                  <input
+                    type="url"
+                    required
+                    placeholder="https://your-cafe-app.example.com/webhooks/kaforia"
+                    value={webhookUrlInput}
+                    onChange={(e) => setWebhookUrlInput(e.target.value)}
+                  />
+                </label>
+                <button type="submit">{webhookEndpoint ? 'Update endpoint' : 'Register endpoint'}</button>
+              </form>
+              {webhookMessage && <p>{webhookMessage}</p>}
             </>
           )}
         </>
