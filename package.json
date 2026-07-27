@@ -7,6 +7,7 @@
   ],
   "scripts": {
     "dev": "./dev.sh",
+    "start": "node apps/api/dist/main.js",
     "dev:api": "npm run start:dev --workspace=apps/api",
     "dev:worker": "npm run start:worker --workspace=apps/api",
     "dev:web": "npm run dev --workspace=apps/web",

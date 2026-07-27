@@ -1,0 +1,43 @@
+# One web service = one URL. It serves the SPA and the API from the same
+# origin and runs the outbox/webhook/agent poll loops in-process, so nothing
+# here needs a second service. Postgres (Neon) and Redis (Upstash) stay where
+# they already are — only their URLs come in as env vars.
+#
+# Serverless (Vercel/Lambda) is deliberately not the target: the availability
+# and agent endpoints are SSE, each holding an open Redis subscriber
+# connection, and the workers poll every second. That wants a process that
+# stays up.
+services:
+  - type: web
+    name: cafe-de-app
+    runtime: node
+    plan: starter # free works, but it sleeps when idle and the poll loops sleep with it
+    region: singapore # same as the Neon instance (ap-southeast-1)
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 1d
+      - key: HOLD_TTL_SECONDS
+        value: 90
+      - key: AVAILABILITY_CACHE_TTL_SECONDS
+        value: 5
+      - key: RATE_LIMIT_IP_CAPACITY
+        value: 100
+      - key: RATE_LIMIT_IP_REFILL_PER_SEC
+        value: 20
+      - key: RATE_LIMIT_USER_CAPACITY
+        value: 60
+      - key: RATE_LIMIT_USER_REFILL_PER_SEC
+        value: 10
+      # Set these in the dashboard — never commit them.
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
