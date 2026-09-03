@@ -35,7 +35,7 @@ If applicable, use RGR to complete the task.
 
 # FEEDBACK LOOPS
 
-Before committing, run `npm run typecheck` and `npm run test` to ensure the tests pass.
+Before committing, run `npm run typecheck` and `npm run test:ci` to ensure the tests pass. (`test:ci` runs jest against the sandbox's own Postgres and Redis; plain `npm run test` expects Docker, which the sandbox does not have.)
 
 # COMMIT
 

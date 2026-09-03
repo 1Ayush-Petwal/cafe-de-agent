@@ -44,15 +44,24 @@ const planSchema = z.object({
 const MAX_ITERATIONS = 10;
 
 // Hooks run inside the sandbox before the agent starts each iteration.
-// npm install ensures the sandbox always has fresh dependencies.
+// npm install ensures the sandbox always has fresh dependencies; the second
+// command brings up this sandbox's own Postgres and Redis, so `npm run test:ci`
+// has services to talk to and concurrent pipelines never share a database.
 const hooks = {
-  sandbox: { onSandboxReady: [{ command: "npm install" }] },
+  sandbox: {
+    onSandboxReady: [
+      { command: "npm install" },
+      { command: "bash .sandcastle/start-services.sh" },
+    ],
+  },
 };
 
-// Copy node_modules from the host into the worktree before each sandbox
-// starts. Avoids a full npm install from scratch; the hook above handles
-// platform-specific binaries and any packages added since the last copy.
-const copyToWorktree = ["node_modules"];
+// Deliberately empty. Copying the host node_modules into the sandbox is only
+// safe when host and sandbox share an OS: `npm install` leaves an existing
+// tree alone, so on a macOS host bcrypt's darwin binary survives into the
+// Linux container and every suite dies with "invalid ELF header". A fresh
+// install per sandbox costs a few seconds and is correct on any host.
+const copyToWorktree: string[] = [];
 
 // ---------------------------------------------------------------------------
 // Main loop

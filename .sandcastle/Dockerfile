@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y \
   git \
   curl \
   jq \
+  postgresql \
+  redis-server \
   && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI
