@@ -196,6 +196,24 @@ export function OwnerDashboardPage() {
     }
   };
 
+  const handleDaysAheadChange = (e: ChangeEvent<HTMLInputElement>) => {
+    // Left blank mid-edit (e.g. select-all then retype) rather than snapping to
+    // the min, so clearing the field to type a fresh number doesn't fight the
+    // owner's keystrokes.
+    if (e.target.value === '') return;
+    const clamped = clampDaysAhead(e.target.value);
+    setGridDays(clamped);
+    // React bails out of touching the DOM when the computed state equals the
+    // previous state (e.g. "14" -> "014", both parse to 14) — this is the
+    // sticky-leading-zero bug from the issue. Writing the input's value directly
+    // forces the display to match what's actually being submitted.
+    e.target.value = String(clamped);
+  };
+
+  const handleDaysAheadBlur = (e: FocusEvent<HTMLInputElement>) => {
+    if (e.target.value === '') e.target.value = String(gridDays);
+  };
+
   const handleBookingsDateChange = (date: string) => {
     setBookingsDate(date);
     if (selectedCafeId) loadBookings(selectedCafeId, date);
@@ -335,23 +353,8 @@ export function OwnerDashboardPage() {
                     min={DAYS_AHEAD_MIN}
                     max={DAYS_AHEAD_MAX}
                     value={gridDays}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                      // Left blank mid-edit (e.g. select-all then retype) rather than
-                      // snapping to the min, so clearing the field to type a fresh
-                      // number doesn't fight the owner's keystrokes.
-                      if (e.target.value === '') return;
-                      const clamped = clampDaysAhead(e.target.value);
-                      setGridDays(clamped);
-                      // React bails out of touching the DOM when the computed state
-                      // equals the previous state (e.g. "14" -> "014", both parse to
-                      // 14) — this is the sticky-leading-zero bug from the issue.
-                      // Writing the input's value directly forces the display to
-                      // match what's actually being submitted.
-                      e.target.value = String(clamped);
-                    }}
-                    onBlur={(e: FocusEvent<HTMLInputElement>) => {
-                      if (e.target.value === '') e.target.value = String(gridDays);
-                    }}
+                    onChange={handleDaysAheadChange}
+                    onBlur={handleDaysAheadBlur}
                   />
                 </label>
                 <label>
