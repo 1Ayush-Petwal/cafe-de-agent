@@ -53,7 +53,10 @@ export class AgentToolsService {
     {
       name: 'confirm_hold',
       description:
-        'Confirm a held table into a real, paid reservation. This spends money — always requires the customer to approve first.',
+        'Confirm a held table into a real, paid reservation. This spends money. With no mandate attached to this ' +
+        'conversation it always requires the customer to approve first. With a mandate attached, it completes ' +
+        'immediately if within bounds, or comes back as a DENY result carrying the reason and remaining headroom ' +
+        'if not — explain that to the customer instead of retrying blindly.',
       parameters: {
         type: 'object',
         properties: {
@@ -63,6 +66,13 @@ export class AgentToolsService {
         },
         required: ['tableId', 'slotId', 'holdId'],
       },
+    },
+    {
+      name: 'get_mandate_status',
+      description:
+        "Read this conversation's own mandate: remaining budget, remaining bookings and expiry. Only useful when " +
+        'a mandate is attached — call it before proposing a booking, since checking is cheaper than being refused.',
+      parameters: { type: 'object', properties: {} },
     },
     {
       name: 'ask_user',
@@ -89,6 +99,7 @@ export class AgentToolsService {
     args: Record<string, unknown>,
     token: string,
     idempotencyKey?: string,
+    mandateId?: string,
   ): Promise<Record<string, unknown>> {
     switch (name) {
       case 'search_cafes':
@@ -98,16 +109,40 @@ export class AgentToolsService {
       case 'hold_table':
         return this.call('POST', '/reservations/hold', token, { tableId: args.tableId, slotId: args.slotId });
       case 'confirm_hold':
-        return this.call(
-          'POST',
-          '/reservations/confirm',
-          token,
-          { tableId: args.tableId, slotId: args.slotId, holdId: args.holdId },
-          idempotencyKey,
-        );
+        return this.confirmHold(args, token, idempotencyKey, mandateId);
+      case 'get_mandate_status':
+        if (!mandateId) {
+          return { error: 'No mandate is attached to this conversation.' };
+        }
+        return this.call('GET', `/mandates/${mandateId}`, token);
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
+  }
+
+  /**
+   * Issue #7 (PRD area D): with a mandate attached, the atomic gate inside
+   * `/reservations/confirm` is the sole arbiter — this just threads the
+   * mandate through and, on a DENY, enriches it with the mandate's current
+   * headroom so the model can explain *and* reason about what would fit,
+   * rather than retrying blindly.
+   */
+  private async confirmHold(
+    args: Record<string, unknown>,
+    token: string,
+    idempotencyKey?: string,
+    mandateId?: string,
+  ): Promise<Record<string, unknown>> {
+    const body: Record<string, unknown> = { tableId: args.tableId, slotId: args.slotId, holdId: args.holdId };
+    if (mandateId) {
+      body.mandateId = mandateId;
+    }
+    const result = await this.call('POST', '/reservations/confirm', token, body, idempotencyKey);
+    if (mandateId && result.verdict === 'DENY') {
+      const status = await this.call('GET', `/mandates/${mandateId}`, token);
+      return { ...result, remainingMinor: status.remainingMinor, remainingBookings: status.remainingBookings };
+    }
+    return result;
   }
 
   private async call(
@@ -131,6 +166,13 @@ export class AgentToolsService {
     });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
+      // A mandate DENY is a structured outcome, not a tool failure (issue
+      // #7, PRD area D) — it's returned to the model as a functionResponse,
+      // never thrown, so the agent can explain it and adapt instead of the
+      // whole workflow failing.
+      if ((payload as { verdict?: string }).verdict === 'DENY') {
+        return payload as Record<string, unknown>;
+      }
       const message = (payload as { message?: string }).message ?? `Tool call failed with status ${res.status}`;
       throw new Error(message);
     }

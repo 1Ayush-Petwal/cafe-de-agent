@@ -22,6 +22,16 @@ a specific question instead of guessing — the customer's answer will come back
 Once the reservation is confirmed, reply with plain text (no further tool call) summarizing what was booked.`;
 
 /**
+ * Issue #7 (PRD area D): appended only when the conversation carries a
+ * mandate. Checking headroom is the cheap path — compliance should cost
+ * less than finding the ceiling by being refused.
+ */
+const MANDATE_INSTRUCTION = `This conversation has a spending mandate attached. Call get_mandate_status to check
+your remaining budget, remaining bookings and expiry before proposing a booking — checking first is cheaper than
+being refused. Bookings that fit the mandate complete immediately, with no approval step. If confirm_hold comes
+back with verdict DENY, tell the customer the specific reason and their remaining headroom instead of retrying.`;
+
+/**
  * The worker half of the durable agent workflow (issue #9, Roadmap M5):
  * `processOnce()` claims PENDING rows via `SELECT ... FOR UPDATE SKIP
  * LOCKED` (same shape as OutboxWorkerService, issue #6) and drives each to
@@ -103,10 +113,12 @@ export class AgentWorkerService {
       }
     }
 
+    const systemInstruction = workflow.mandateId ? `${SYSTEM_INSTRUCTION}\n\n${MANDATE_INSTRUCTION}` : SYSTEM_INSTRUCTION;
+
     for (let step = 0; step < MAX_STEPS_PER_TICK; step++) {
       let turn;
       try {
-        turn = await this.llm.nextStep(SYSTEM_INSTRUCTION, workflow.history, this.tools.specs);
+        turn = await this.llm.nextStep(systemInstruction, workflow.history, this.tools.specs);
       } catch (err) {
         this.fail(workflow, err);
         return;
@@ -125,6 +137,21 @@ export class AgentWorkerService {
       }
 
       if (this.tools.spendingTools.has(turn.functionCall.name)) {
+        // Issue #7 (PRD area D): a mandate stands in for the per-action
+        // approval dialog — that's the entire value of granting one. The
+        // atomic gate inside confirm_hold (issue #5) is the sole arbiter of
+        // whether it's actually allowed; a DENY comes back as a structured
+        // tool result (see AgentToolsService), not a thrown error, so the
+        // loop just keeps reasoning with it below instead of parking or
+        // failing. No mandate on the workflow means this branch is never
+        // taken and behaviour is byte-for-byte what it was before.
+        if (workflow.mandateId) {
+          await this.runTool(workflow, turn.functionCall.name, turn.functionCall.args, token);
+          if (workflow.status === AgentWorkflowStatus.FAILED) {
+            return;
+          }
+          continue;
+        }
         workflow.pendingAction = { name: turn.functionCall.name, args: turn.functionCall.args };
         workflow.status = AgentWorkflowStatus.AWAITING_APPROVAL;
         return;
@@ -152,7 +179,7 @@ export class AgentWorkerService {
   ): Promise<void> {
     try {
       const idempotencyKey = name === 'confirm_hold' ? `agent:${workflow.id}` : undefined;
-      const result = await this.tools.execute(name, args, token, idempotencyKey);
+      const result = await this.tools.execute(name, args, token, idempotencyKey, workflow.mandateId ?? undefined);
       workflow.history = [...workflow.history, { role: 'user', functionResponse: { name, response: result } }];
       if (name === 'hold_table') {
         workflow.holdCount += 1;

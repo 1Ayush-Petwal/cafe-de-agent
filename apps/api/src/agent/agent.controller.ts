@@ -31,7 +31,7 @@ export class AgentController {
   @Post()
   @UseGuards(JwtAuthGuard)
   async create(@CurrentUser() user: JwtPayload, @Body() dto: CreateWorkflowDto) {
-    const workflow = await this.agent.create(user, dto.message);
+    const workflow = await this.agent.create(user, dto.message, dto.mandateId);
     return { id: workflow.id, status: workflow.status };
   }
 

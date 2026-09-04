@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AgentWorkflow } from '../entities/agent-workflow.entity';
+import { MandatesModule } from '../mandates/mandates.module';
 import { AgentController } from './agent.controller';
 import { AgentEventsService } from './agent-events.service';
 import { AgentToolsService } from './agent-tools.service';
@@ -10,7 +11,7 @@ import { AgentService } from './agent.service';
 import { AgentLlmClient } from './llm/agent-llm.client';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AgentWorkflow]), AuthModule],
+  imports: [TypeOrmModule.forFeature([AgentWorkflow]), AuthModule, MandatesModule],
   controllers: [AgentController],
   providers: [AgentService, AgentEventsService, AgentToolsService, AgentLlmClient, AgentWorkerService],
   exports: [AgentService, AgentEventsService, AgentToolsService, AgentLlmClient, AgentWorkerService],

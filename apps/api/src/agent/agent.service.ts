@@ -4,17 +4,27 @@ import { Repository } from 'typeorm';
 import { JwtPayload } from '../auth/jwt.strategy';
 import { AgentWorkflowStatus } from '../entities/agent-workflow-status.enum';
 import { AgentWorkflow } from '../entities/agent-workflow.entity';
+import { MandatesService } from '../mandates/mandates.service';
 
 @Injectable()
 export class AgentService {
-  constructor(@InjectRepository(AgentWorkflow) private readonly workflows: Repository<AgentWorkflow>) {}
+  constructor(
+    @InjectRepository(AgentWorkflow) private readonly workflows: Repository<AgentWorkflow>,
+    private readonly mandates: MandatesService,
+  ) {}
 
   /**
    * Returns immediately with a PENDING row — the loop itself runs on the
    * worker's next poll, never inside this HTTP request (issue #9, Roadmap
-   * M5).
+   * M5). Issue #7 (PRD area D): an optional `mandateId` attaches a standing
+   * mandate to the whole conversation; ownership is checked up front (the
+   * same 404/403 shape as every other mandate-scoped endpoint) so a
+   * conversation can never carry a mandate that isn't the caller's.
    */
-  create(user: JwtPayload, message: string): Promise<AgentWorkflow> {
+  async create(user: JwtPayload, message: string, mandateId?: string): Promise<AgentWorkflow> {
+    if (mandateId) {
+      await this.mandates.assertOwned(user.sub, mandateId);
+    }
     return this.workflows.save(
       this.workflows.create({
         userId: user.sub,
@@ -22,6 +32,7 @@ export class AgentService {
         role: user.role,
         request: message,
         history: [{ role: 'user', text: message }],
+        mandateId: mandateId ?? null,
       }),
     );
   }
