@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Injectable } from '@nestjs/common';
 import { LlmTurn, ToolSpec } from './agent-llm.types';
 
-const MODEL = 'gemini-2.0-flash';
+const MODEL = 'gemini-3.6-flash';
 
 /**
  * A scripted turn can be a function of the conversation so far — needed
@@ -74,7 +74,15 @@ export class AgentLlmClient {
 
     const call = response.functionCalls?.[0];
     if (call?.name) {
-      return { role: 'model', functionCall: { name: call.name, args: call.args ?? {} } };
+      const part = response.candidates?.[0]?.content?.parts?.find((p) => p.functionCall);
+      return {
+        role: 'model',
+        functionCall: {
+          name: call.name,
+          args: call.args ?? {},
+          thoughtSignature: part?.thoughtSignature ?? undefined,
+        },
+      };
     }
     return { role: 'model', text: response.text ?? '' };
   }
@@ -82,10 +90,19 @@ export class AgentLlmClient {
 
 function toContent(turn: LlmTurn) {
   if (turn.functionCall) {
-    return { role: turn.role, parts: [{ functionCall: turn.functionCall }] };
+    const { thoughtSignature, ...functionCall } = turn.functionCall;
+    return { role: turn.role, parts: [{ functionCall, thoughtSignature }] };
   }
   if (turn.functionResponse) {
-    return { role: turn.role, parts: [{ functionResponse: turn.functionResponse }] };
+    // Gemini requires `response` to be a JSON object, not an array or scalar -
+    // a tool like search_cafes returns a bare array, so wrap anything that
+    // isn't a plain object. Done here, at the single serialization boundary,
+    // so every tool is covered rather than each call site.
+    const { name, response } = turn.functionResponse;
+    const payload: Record<string, unknown> = Array.isArray(response)
+      ? { result: response }
+      : response;
+    return { role: turn.role, parts: [{ functionResponse: { name, response: payload } }] };
   }
   return { role: turn.role, parts: [{ text: turn.text ?? '' }] };
 }

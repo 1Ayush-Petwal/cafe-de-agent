@@ -6,7 +6,12 @@
 export interface LlmTurn {
   role: 'user' | 'model';
   text?: string;
-  functionCall?: { name: string; args: Record<string, unknown> };
+  /**
+   * `thoughtSignature` is Gemini 3.x's opaque handle for the reasoning behind
+   * a tool call. It must be echoed back verbatim on the next request or the
+   * API rejects the history, so it rides along on the turn we persist.
+   */
+  functionCall?: { name: string; args: Record<string, unknown>; thoughtSignature?: string };
   functionResponse?: { name: string; response: Record<string, unknown> };
 }
 

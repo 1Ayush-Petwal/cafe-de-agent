@@ -10,7 +10,11 @@ import { ToolSpec } from './llm/agent-llm.types';
  */
 @Injectable()
 export class AgentToolsService {
-  private baseUrl = process.env.AGENT_API_BASE_URL || `http://127.0.0.1:${process.env.PORT ?? 3000}`;
+  // The `/api` suffix mirrors main.ts setGlobalPrefix - the tool paths below
+  // are public API routes, so they only resolve behind the prefix. Tests
+  // override this via setBaseUrl with an app that has no prefix set.
+  private baseUrl =
+    process.env.AGENT_API_BASE_URL || `http://127.0.0.1:${process.env.PORT ?? 3000}/api`;
 
   setBaseUrl(url: string): void {
     this.baseUrl = url;
