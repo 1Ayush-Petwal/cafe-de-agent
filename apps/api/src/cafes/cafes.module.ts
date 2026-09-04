@@ -6,6 +6,7 @@ import { Cafe } from '../entities/cafe.entity';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
 import { HoldsModule } from '../holds/holds.module';
+import { MandatesModule } from '../mandates/mandates.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { CafesController } from './cafes.controller';
 import { CafesService } from './cafes.service';
@@ -16,6 +17,7 @@ import { CafesService } from './cafes.service';
     HoldsModule,
     RealtimeModule,
     CacheModule,
+    MandatesModule,
   ],
   controllers: [CafesController],
   providers: [CafesService],
