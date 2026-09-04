@@ -18,7 +18,6 @@ import { ReservationStatus } from '../entities/reservation-status.enum';
 import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
 import { User } from '../entities/user.entity';
-import { WALLET_CHARGE_AMOUNT } from '../entities/wallet.constants';
 import { WebhookEventType } from '../entities/webhook-event-type.enum';
 import { WebhookJob } from '../entities/webhook-job.entity';
 import { Hold, HoldsService } from '../holds/holds.service';
@@ -67,32 +66,40 @@ export class ReservationsService {
    * same user without a separate SELECT-then-check race. Must run inside the
    * same transaction as the reservation/payment write (see call sites) so a
    * charge can never survive a booking that didn't.
+   *
+   * Issue #3 (PRD area A): `amountMinor` is the slot's own frozen price in
+   * paise — there is no longer a single flat charge amount.
    */
-  private async chargeWallet(manager: EntityManager, userId: string): Promise<void> {
+  private async chargeWallet(manager: EntityManager, userId: string, amountMinor: number): Promise<void> {
     const result = await manager
       .createQueryBuilder()
       .update(User)
-      .set({ walletBalance: () => `"walletBalance" - ${WALLET_CHARGE_AMOUNT}` })
-      .where('id = :userId AND "walletBalance" >= :amount', { userId, amount: WALLET_CHARGE_AMOUNT })
+      .set({ walletBalance: () => `"walletBalance" - ${amountMinor}` })
+      .where('id = :userId AND "walletBalance" >= :amount', { userId, amount: amountMinor })
       .execute();
     if (result.affected !== 1) {
       throw new InsufficientBalanceError();
     }
   }
 
-  private async refundWallet(manager: EntityManager, userId: string): Promise<void> {
+  private async refundWallet(manager: EntityManager, userId: string, amountMinor: number): Promise<void> {
     await manager
       .createQueryBuilder()
       .update(User)
-      .set({ walletBalance: () => `"walletBalance" + ${WALLET_CHARGE_AMOUNT}` })
+      .set({ walletBalance: () => `"walletBalance" + ${amountMinor}` })
       .where('id = :userId', { userId })
       .execute();
   }
 
-  /** Reads the balance fresh — called after a `chargeWallet` rollback, so this is the pre-charge balance. */
+  /**
+   * Reads the balance fresh — called after a `chargeWallet` rollback, so
+   * this is the pre-charge balance. Issue #3: the wallet itself is paise;
+   * this is the one place paise become rupees, since the message is for a
+   * human to read.
+   */
   private async insufficientBalanceMessage(userId: string): Promise<string> {
     const user = await this.users.findOneOrFail({ where: { id: userId } });
-    return `Payment failed — insufficient wallet balance (₹${user.walletBalance} remaining)`;
+    return `Payment failed — insufficient wallet balance (₹${Math.floor(user.walletBalance / 100)} remaining)`;
   }
 
   /** Translates the two failure modes shared by every write path: no money, or someone else won the race. */
@@ -145,18 +152,23 @@ export class ReservationsService {
   /**
    * Charges the wallet and writes the reservation + payment atomically
    * (within the caller's transaction) — shared by every write path (direct
-   * book's three strategies and hold->confirm) so the ₹25 charge and the
-   * Payment record it produces can never diverge between them. Every path
-   * that lands a reservation in `booked` also enqueues the partner
-   * `booking.created` webhook here, so direct book can't become a free side
-   * door around partner sync the way it once was around the wallet charge.
+   * book's three strategies and hold->confirm) so the charge and the
+   * Payment record it produces can never diverge between them. Issue #3
+   * (PRD area A): the charge is the slot's own frozen `priceMinor`, resolved
+   * here — the single seam every write path already routes through — rather
+   * than a flat constant, so direct-book and hold->confirm charge
+   * identically by construction. Every path that lands a reservation in
+   * `booked` also enqueues the partner `booking.created` webhook here, so
+   * direct book can't become a free side door around partner sync the way
+   * it once was around the wallet charge.
    */
   private async writeBookingAndCharge(
     manager: EntityManager,
     userId: string,
     dto: { tableId: string; slotId: string },
   ): Promise<Reservation> {
-    await this.chargeWallet(manager, userId);
+    const slot = await manager.findOneOrFail(Slot, { where: { id: dto.slotId } });
+    await this.chargeWallet(manager, userId, slot.priceMinor);
     const saved = await manager.save(
       Reservation,
       manager.create(Reservation, {
@@ -166,7 +178,7 @@ export class ReservationsService {
         status: ReservationStatus.BOOKED,
       }),
     );
-    await manager.save(Payment, manager.create(Payment, { reservationId: saved.id, amount: WALLET_CHARGE_AMOUNT }));
+    await manager.save(Payment, manager.create(Payment, { reservationId: saved.id, amount: slot.priceMinor }));
     await this.enqueueWebhookJob(manager, WebhookEventType.BOOKING_CREATED, saved);
     return saved;
   }
@@ -524,14 +536,18 @@ export class ReservationsService {
     }
     // Idempotent: a reservation is only ever charged once (booked), so it
     // should only ever be refunded once — cancelling an already-cancelled
-    // reservation is a no-op rather than a second ₹25 refund (issue #21).
+    // reservation is a no-op rather than a second refund (issue #21).
     if (reservation.status !== ReservationStatus.BOOKED) {
       return;
     }
 
     await this.dataSource.transaction(async (manager) => {
       await manager.update(Reservation, { id: reservation.id }, { status: ReservationStatus.CANCELLED });
-      await this.refundWallet(manager, userId);
+      // Issue #3: refund exactly what was charged — the Payment row, not
+      // the slot's current price — so a refund can never diverge even if
+      // something else changed the slot's price after this booking.
+      const payment = await manager.findOneOrFail(Payment, { where: { reservationId: reservation.id } });
+      await this.refundWallet(manager, userId, payment.amount);
       await this.enqueueWebhookJob(manager, WebhookEventType.BOOKING_CANCELLED, reservation);
     });
 

@@ -16,6 +16,7 @@ import {
   dailySlotTimesConfigurable,
   toDateOnly,
 } from '../seed/slot-grid';
+import { computeSlotPriceMinor } from '../pricing/slot-price';
 import { AvailabilityCacheService } from '../cache/availability-cache.service';
 import { CreateCafeDto } from './dto/create-cafe.dto';
 import { CreateTableDto } from './dto/create-table.dto';
@@ -67,6 +68,8 @@ export class OwnerService {
         longitude: dto.longitude ?? null,
         ...(dto.openingHour !== undefined ? { openingHour: dto.openingHour } : {}),
         ...(dto.closingHour !== undefined ? { closingHour: dto.closingHour } : {}),
+        ...(dto.priceBandMinor !== undefined ? { priceBandMinor: dto.priceBandMinor } : {}),
+        ...(dto.maxDiscountMinor !== undefined ? { maxDiscountMinor: dto.maxDiscountMinor } : {}),
         ownerId,
       }),
     );
@@ -84,6 +87,8 @@ export class OwnerService {
     if (dto.longitude !== undefined) cafe.longitude = dto.longitude;
     if (dto.openingHour !== undefined) cafe.openingHour = dto.openingHour;
     if (dto.closingHour !== undefined) cafe.closingHour = dto.closingHour;
+    if (dto.priceBandMinor !== undefined) cafe.priceBandMinor = dto.priceBandMinor;
+    if (dto.maxDiscountMinor !== undefined) cafe.maxDiscountMinor = dto.maxDiscountMinor;
     const saved = await this.cafes.save(cafe);
     await this.cache.invalidateCafeList();
     return saved;
@@ -134,7 +139,7 @@ export class OwnerService {
 
   /** Generates (or extends) the daily slot grid for this café; skips dates that already have slots. */
   async generateSlots(ownerId: string, cafeId: string, dto: GenerateSlotsDto): Promise<Slot[]> {
-    await this.requireOwnedCafe(ownerId, cafeId);
+    const cafe = await this.requireOwnedCafe(ownerId, cafeId);
     const days = dto.days ?? 14;
     const openHour = dto.openHour ?? OPENING_HOUR_UTC;
     const closeHour = dto.closeHour ?? CLOSING_HOUR_UTC;
@@ -168,7 +173,11 @@ export class OwnerService {
     if (toCreate.length === 0) {
       return [];
     }
-    return this.slots.save(toCreate.map((slotTime) => this.slots.create({ cafeId, slotTime })));
+    return this.slots.save(
+      toCreate.map((slotTime) =>
+        this.slots.create({ cafeId, slotTime, priceMinor: computeSlotPriceMinor(cafe.priceBandMinor, slotTime) }),
+      ),
+    );
   }
 
   async bookingsForDay(ownerId: string, cafeId: string, date: string): Promise<Reservation[]> {

@@ -209,4 +209,58 @@ describe('Owner manages the floor (e2e)', () => {
     const table = availability.body.find((t: { tableId: string }) => t.tableId === tableId);
     expect(table.slots.every((s: { available: boolean }) => s.available === false)).toBe(true);
   });
+
+  /**
+   * Issue #3 (PRD area A): generated slots price themselves from the café's
+   * band and each slot's own hour/day — never a flat number, and never the
+   * same price for a dinner-hour weekend slot as a lunch-hour weekday one.
+   */
+  it('prices generated slots by hour and by weekday versus weekend', async () => {
+    const owner = await signup(app, 'owner4@example.com', 'owner');
+    const customer = await signup(app, 'diner3@example.com', 'customer');
+
+    const cafeRes = await request(app.getHttpServer())
+      .post('/owner/cafes')
+      .set('Authorization', `Bearer ${owner}`)
+      .send({ name: 'Priced Café', area: 'CP', priceBandMinor: 40000 })
+      .expect(201);
+    const cafeId = cafeRes.body.id;
+    expect(cafeRes.body).toMatchObject({ priceBandMinor: 40000, maxDiscountMinor: 8000 });
+
+    await request(app.getHttpServer())
+      .post(`/owner/cafes/${cafeId}/tables`)
+      .set('Authorization', `Bearer ${owner}`)
+      .send({ label: 'T1', capacity: 2 })
+      .expect(201);
+
+    // 2026-08-03 is a Monday (weekday); 2026-08-07 is a Friday (weekend rate).
+    await request(app.getHttpServer())
+      .post(`/owner/cafes/${cafeId}/slots/generate`)
+      .set('Authorization', `Bearer ${owner}`)
+      .send({ startDate: '2026-08-03', days: 1, openHour: 9, closeHour: 22, turnTimeMinutes: 60 })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/owner/cafes/${cafeId}/slots/generate`)
+      .set('Authorization', `Bearer ${owner}`)
+      .send({ startDate: '2026-08-07', days: 1, openHour: 9, closeHour: 22, turnTimeMinutes: 60 })
+      .expect(201);
+
+    const priceAt = async (date: string, hour: number): Promise<number> => {
+      const res = await request(app.getHttpServer())
+        .get(`/cafes/${cafeId}/availability`)
+        .query({ date })
+        .set('Authorization', `Bearer ${customer}`)
+        .expect(200);
+      const slot = res.body[0].slots.find((s: { slotTime: string }) => new Date(s.slotTime).getUTCHours() === hour);
+      return slot.priceMinor;
+    };
+
+    // Same weekday, different hours: dinner peak costs more than the lunch baseline.
+    expect(await priceAt('2026-08-03', 19)).toBe(60000); // 40000 * 1.5
+    expect(await priceAt('2026-08-03', 12)).toBe(40000); // 40000 * 1.0
+    expect(await priceAt('2026-08-03', 15)).toBe(28000); // 40000 * 0.7
+
+    // Same hour, weekday vs. weekend: the Friday dinner slot costs more.
+    expect(await priceAt('2026-08-07', 19)).toBe(78000); // 40000 * 1.5 * 1.3
+  });
 });

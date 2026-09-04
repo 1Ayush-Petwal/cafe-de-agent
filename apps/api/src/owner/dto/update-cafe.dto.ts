@@ -30,4 +30,14 @@ export class UpdateCafeDto {
   @Min(1)
   @Max(24)
   closingHour?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  priceBandMinor?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  maxDiscountMinor?: number;
 }

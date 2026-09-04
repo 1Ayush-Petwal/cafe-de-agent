@@ -51,6 +51,21 @@ export class Cafe {
   @Column({ type: 'uuid', nullable: true })
   ownerId!: string | null;
 
+  /**
+   * Issue #3 (PRD area A): the café's base price in paise, the single number
+   * an owner controls. Every seeded/generated slot's `priceMinor` derives
+   * from this band times an hour/day multiplier (see pricing/slot-price.ts).
+   */
+  @Column({ type: 'int', default: 40000 })
+  priceBandMinor!: number;
+
+  /**
+   * Owner-set floor (paise): no automated discount mechanic (PRD area F) may
+   * ever price a slot below this, regardless of how cold it scores.
+   */
+  @Column({ type: 'int', default: 8000 })
+  maxDiscountMinor!: number;
+
   @OneToMany(() => CafeTable, (table) => table.cafe)
   tables!: CafeTable[];
 
