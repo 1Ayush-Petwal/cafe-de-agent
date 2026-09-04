@@ -1,3 +1,7 @@
-/** Issue #21 (PRD area C): fake in-app wallet — flat ₹25 per booking, no paise. */
-export const WALLET_SIGNUP_BALANCE = 500;
-export const WALLET_CHARGE_AMOUNT = 25;
+/**
+ * Issue #3 (PRD area A): the wallet moved from whole rupees to integer
+ * paise, so it takes a real number from a real Razorpay-boundary unit. There
+ * is no longer a flat per-booking charge — the charge is the slot's own
+ * `priceMinor`, resolved in `writeBookingAndCharge`.
+ */
+export const WALLET_SIGNUP_BALANCE = 50000;

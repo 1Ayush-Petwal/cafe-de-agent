@@ -17,7 +17,7 @@ export class User {
   @Column({ type: 'enum', enum: UserRole, default: UserRole.CUSTOMER })
   role!: UserRole;
 
-  /** Issue #21 (PRD area C): fake in-app wallet, whole rupees, no paise. */
+  /** Issue #21 (PRD area C): fake in-app wallet. Issue #3: stored in paise. */
   @Column({ type: 'int', default: WALLET_SIGNUP_BALANCE })
   walletBalance!: number;
 

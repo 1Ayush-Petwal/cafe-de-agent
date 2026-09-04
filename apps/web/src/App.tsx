@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, Link } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
+import { formatRupees } from './money';
 import { OfflineBanner } from './OfflineBanner';
 import { AgentChatPage } from './pages/AgentChatPage';
 import { CafeAvailabilityPage } from './pages/CafeAvailabilityPage';
@@ -43,7 +44,7 @@ export function App() {
                 </>
               )}
               <span className="user-email">{user?.email}</span>
-              <span className="wallet-balance">₹{user?.walletBalance}</span>
+              <span className="wallet-balance">{user ? formatRupees(user.walletBalance) : ''}</span>
               <button onClick={logout}>Log out</button>
             </>
           ) : (

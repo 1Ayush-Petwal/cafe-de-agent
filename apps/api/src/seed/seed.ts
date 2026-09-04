@@ -8,6 +8,7 @@ import { Slot } from '../entities/slot.entity';
 import { User } from '../entities/user.entity';
 import { DELHI_CAFES } from './delhi-cafes';
 import { dailySlotTimes, toDateOnly } from './slot-grid';
+import { computeSlotPriceMinor } from '../pricing/slot-price';
 
 const SEED_DAYS_AHEAD = 14;
 
@@ -57,7 +58,9 @@ async function seed() {
     );
 
     const slots = dateStrings.flatMap((dateOnly) =>
-      dailySlotTimes(dateOnly).map((slotTime) => slotRepo.create({ cafeId: cafe.id, slotTime })),
+      dailySlotTimes(dateOnly).map((slotTime) =>
+        slotRepo.create({ cafeId: cafe.id, slotTime, priceMinor: computeSlotPriceMinor(cafe.priceBandMinor, slotTime) }),
+      ),
     );
     await slotRepo.save(slots);
 

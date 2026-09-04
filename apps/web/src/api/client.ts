@@ -79,6 +79,7 @@ export interface AvailabilitySlotDto {
   slotId: string;
   slotTime: string;
   available: boolean;
+  priceMinor: number;
 }
 
 export interface TableAvailabilityDto {

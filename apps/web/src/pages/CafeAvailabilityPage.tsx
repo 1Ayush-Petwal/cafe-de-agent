@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ApiError, HoldDto, api, TableAvailabilityDto } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { formatRupees } from '../money';
 
 const DATE_PILL_COUNT = 7;
 
@@ -120,13 +121,19 @@ export function CafeAvailabilityPage() {
     }
   };
 
+  // Price lives on the slot, not the table — any table's matching slot entry
+  // carries the same priceMinor (issue #3, PRD area A).
+  const priceForSlot = (slotId: string): number | undefined =>
+    tables.flatMap((t) => t.slots).find((s) => s.slotId === slotId)?.priceMinor;
+
   const handleConfirm = async () => {
     if (!hold || !confirmKey) return;
     setConfirming(true);
     setError(null);
+    const priceMinor = priceForSlot(hold.slotId) ?? 0;
     try {
       await api.confirmHold(hold.holdId, hold.tableId, hold.slotId, confirmKey);
-      adjustWalletBalance(-25);
+      adjustWalletBalance(-priceMinor);
       setHold(null);
       setSelectedTableId(null);
       setConfirmKey(null);
@@ -143,6 +150,7 @@ export function CafeAvailabilityPage() {
   };
 
   const slots = tables[0]?.slots ?? [];
+  const heldSlotPrice = hold ? priceForSlot(hold.slotId) : undefined;
 
   return (
     <div>
@@ -154,7 +162,7 @@ export function CafeAvailabilityPage() {
             Table held — confirm within <strong>{secondsLeft}s</strong>
           </span>
           <button disabled={confirming} onClick={handleConfirm}>
-            {confirming ? '…' : 'Confirm — ₹25'}
+            {confirming ? '…' : `Confirm — ${heldSlotPrice !== undefined ? formatRupees(heldSlotPrice) : ''}`}
           </button>
         </div>
       )}
@@ -188,7 +196,7 @@ export function CafeAvailabilityPage() {
                 disabled={!!hold}
                 onClick={() => handleSlotSelect(slot.slotId)}
               >
-                {formatSlotTime(slot.slotTime)}
+                {formatSlotTime(slot.slotTime)} · {formatRupees(slot.priceMinor)}
               </button>
             ))}
             {slots.length === 0 && <p>No slots for this date.</p>}

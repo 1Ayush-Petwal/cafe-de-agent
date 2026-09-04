@@ -16,7 +16,8 @@ interface AuthContextValue {
   logout: () => void;
   // Issue #21: the wallet balance in the nav header is seeded from login/signup
   // and there's no GET /auth/me to refresh it, so confirm/cancel apply their
-  // known ₹25 effect locally rather than showing a stale number until next login.
+  // known effect locally rather than showing a stale number until next login.
+  // Issue #3: delta is paise, matching walletBalance's unit.
   adjustWalletBalance: (delta: number) => void;
 }
 

@@ -6,7 +6,7 @@ import { Payment } from '../src/entities/payment.entity';
 import { Reservation } from '../src/entities/reservation.entity';
 import { User } from '../src/entities/user.entity';
 import { REDIS_CLIENT } from '../src/redis/redis.constants';
-import { createTestApp, Fixture, seedFixture, truncateAll } from './utils/test-app';
+import { createTestApp, Fixture, FIXTURE_SLOT_PRICE_MINOR, seedFixture, truncateAll } from './utils/test-app';
 
 async function signup(app: INestApplication, email: string): Promise<{ token: string; userId: string; walletBalance: number }> {
   const res = await request(app.getHttpServer())
@@ -23,8 +23,9 @@ async function walletBalance(app: INestApplication, userId: string): Promise<num
 
 /**
  * Issue #21 (PRD area C): a fake in-app wallet replaces the coin-flip mock
- * payment gateway (issue #5) — every confirmed booking costs a flat ₹25,
- * charged atomically alongside the reservation write, refunded on cancel.
+ * payment gateway (issue #5) — every confirmed booking charges the slot's
+ * own price, charged atomically alongside the reservation write, refunded
+ * on cancel. Issue #3 (PRD area A): balances and charges are integer paise.
  */
 describe('Wallet (e2e)', () => {
   let app: INestApplication;
@@ -46,12 +47,12 @@ describe('Wallet (e2e)', () => {
     await app.close();
   });
 
-  it('grants a ₹500 starting balance on signup', async () => {
+  it('grants a ₹500 (50000 paise) starting balance on signup', async () => {
     const { walletBalance: balance } = await signup(app, 'alice@example.com');
-    expect(balance).toBe(500);
+    expect(balance).toBe(50000);
   });
 
-  it('charges the direct book path identically to hold→confirm: ₹25, with a payment recorded', async () => {
+  it('charges the direct book path identically to hold→confirm: the slot\'s own price, with a payment recorded', async () => {
     const { token, userId } = await signup(app, 'alice@example.com');
 
     const bookRes = await request(app.getHttpServer())
@@ -60,29 +61,29 @@ describe('Wallet (e2e)', () => {
       .send({ tableId: fixture.tableId, slotId: fixture.slotId })
       .expect(201);
 
-    expect(await walletBalance(app, userId)).toBe(475);
+    expect(await walletBalance(app, userId)).toBe(50000 - FIXTURE_SLOT_PRICE_MINOR);
     const paymentRepo = app.get(DataSource).getRepository(Payment);
     const payment = await paymentRepo.findOne({ where: { reservationId: bookRes.body.id } });
-    expect(payment).toMatchObject({ amount: 25 });
+    expect(payment).toMatchObject({ amount: FIXTURE_SLOT_PRICE_MINOR });
   });
 
   it('rejects a direct booking with 402 when the balance is too low, writing nothing', async () => {
     const { token, userId } = await signup(app, 'alice@example.com');
-    await app.get(DataSource).getRepository(User).update({ id: userId }, { walletBalance: 24 });
+    await app.get(DataSource).getRepository(User).update({ id: userId }, { walletBalance: 1000 });
 
     const res = await request(app.getHttpServer())
       .post('/reservations')
       .set('Authorization', `Bearer ${token}`)
       .send({ tableId: fixture.tableId, slotId: fixture.slotId })
       .expect(402);
-    expect(res.body.message).toMatch(/₹24/);
+    expect(res.body.message).toMatch(/₹10\b/);
 
     expect(await app.get(DataSource).getRepository(Reservation).count()).toBe(0);
     expect(await app.get(DataSource).getRepository(Payment).count()).toBe(0);
-    expect(await walletBalance(app, userId)).toBe(24);
+    expect(await walletBalance(app, userId)).toBe(1000);
   });
 
-  it('refunds ₹25 when a confirmed booking is cancelled', async () => {
+  it('refunds the slot\'s price when a confirmed booking is cancelled', async () => {
     const { token, userId } = await signup(app, 'alice@example.com');
     const hold = await request(app.getHttpServer())
       .post('/reservations/hold')
@@ -94,21 +95,21 @@ describe('Wallet (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ holdId: hold.body.holdId, tableId: fixture.tableId, slotId: fixture.slotId })
       .expect(201);
-    expect(await walletBalance(app, userId)).toBe(475);
+    expect(await walletBalance(app, userId)).toBe(50000 - FIXTURE_SLOT_PRICE_MINOR);
 
     await request(app.getHttpServer())
       .delete(`/reservations/${confirm.body.id}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    expect(await walletBalance(app, userId)).toBe(500);
+    expect(await walletBalance(app, userId)).toBe(50000);
 
     // Cancelling again is a no-op, not a second refund.
     await request(app.getHttpServer())
       .delete(`/reservations/${confirm.body.id}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(await walletBalance(app, userId)).toBe(500);
+    expect(await walletBalance(app, userId)).toBe(50000);
   });
 
   it('leaves the balance untouched when a hold is lost to a race before confirm', async () => {
@@ -137,6 +138,6 @@ describe('Wallet (e2e)', () => {
       .send({ holdId: aliceHold.body.holdId, tableId: fixture.tableId, slotId: fixture.slotId })
       .expect(410);
 
-    expect(await walletBalance(app, alice.userId)).toBe(500);
+    expect(await walletBalance(app, alice.userId)).toBe(50000);
   });
 });

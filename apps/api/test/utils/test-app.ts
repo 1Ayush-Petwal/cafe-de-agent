@@ -36,6 +36,15 @@ export async function truncateAll(app: INestApplication): Promise<void> {
   );
 }
 
+/**
+ * Issue #3 (PRD area A): a fixed, known-affordable price for the fixture's
+ * single slot — distinct from `Slot.priceMinor`'s DB default (40000) and
+ * from the real hour/day pricing a slot would get through seed.ts or
+ * generateSlots, so a passing charge assertion actually proves "the slot's
+ * own price", not a coincidence with some other constant.
+ */
+export const FIXTURE_SLOT_PRICE_MINOR = 4000;
+
 export interface Fixture {
   cafeId: string;
   tableId: string;
@@ -59,7 +68,9 @@ export async function seedFixture(app: INestApplication): Promise<Fixture> {
     tableRepo.create({ cafeId: cafe.id, label: 'T2', capacity: 4 }),
   );
   const slotTime = new Date('2026-08-01T09:00:00.000Z');
-  const slot = await slotRepo.save(slotRepo.create({ cafeId: cafe.id, slotTime }));
+  const slot = await slotRepo.save(
+    slotRepo.create({ cafeId: cafe.id, slotTime, priceMinor: FIXTURE_SLOT_PRICE_MINOR }),
+  );
 
   return {
     cafeId: cafe.id,

@@ -13,6 +13,7 @@ export interface AvailabilitySlot {
   slotId: string;
   slotTime: Date;
   available: boolean;
+  priceMinor: number;
 }
 
 export interface TableAvailability {
@@ -134,6 +135,7 @@ export class CafesService {
           table.inService &&
           !bookedKeys.has(`${table.id}:${slot.id}`) &&
           !held.has(`${table.id}:${slot.id}`),
+        priceMinor: slot.priceMinor,
       })),
     }));
     await this.availabilityCache.set(cafeId, date, result);
