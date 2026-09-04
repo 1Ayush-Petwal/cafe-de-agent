@@ -244,7 +244,7 @@ export const api = {
     cafeId: string,
     dto: { startDate: string; days?: number; openHour?: number; closeHour?: number; turnTimeMinutes?: number },
   ) =>
-    request<{ id: string }[]>(`/owner/cafes/${cafeId}/slots/generate`, {
+    request<{ id: string; slotTime: string }[]>(`/owner/cafes/${cafeId}/slots/generate`, {
       method: 'POST',
       body: JSON.stringify(dto),
     }),

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { ChangeEvent, FocusEvent, FormEvent, useEffect, useState } from 'react';
 import {
   ApiError,
   CafeDto,
@@ -9,12 +9,22 @@ import {
   api,
 } from '../api/client';
 
+const DAYS_AHEAD_MIN = 1;
+const DAYS_AHEAD_MAX = 60;
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
 function formatSlotTime(iso: string): string {
   return new Date(iso).toLocaleString([], { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** Matches the API's own days-ahead bounds (`GenerateSlotsDto`) so the number shown is the number submitted. */
+function clampDaysAhead(raw: string): number {
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return DAYS_AHEAD_MIN;
+  return Math.min(DAYS_AHEAD_MAX, Math.max(DAYS_AHEAD_MIN, parsed));
 }
 
 export function OwnerDashboardPage() {
@@ -175,7 +185,12 @@ export function OwnerDashboardPage() {
         closeHour: gridCloseHour,
         turnTimeMinutes: gridTurnTime,
       });
-      setGridMessage(`Created ${created.length} new slot(s).`);
+      const newDays = new Set(created.map((slot) => slot.slotTime.slice(0, 10))).size;
+      const skippedDays = gridDays - newDays;
+      setGridMessage(
+        `Created ${created.length} slots across ${newDays} new days ` +
+          `(${skippedDays} days already had slots — skipped).`,
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not generate slot grid');
     }
@@ -317,9 +332,26 @@ export function OwnerDashboardPage() {
                   Days ahead
                   <input
                     type="number"
-                    min={1}
+                    min={DAYS_AHEAD_MIN}
+                    max={DAYS_AHEAD_MAX}
                     value={gridDays}
-                    onChange={(e) => setGridDays(Number(e.target.value))}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                      // Left blank mid-edit (e.g. select-all then retype) rather than
+                      // snapping to the min, so clearing the field to type a fresh
+                      // number doesn't fight the owner's keystrokes.
+                      if (e.target.value === '') return;
+                      const clamped = clampDaysAhead(e.target.value);
+                      setGridDays(clamped);
+                      // React bails out of touching the DOM when the computed state
+                      // equals the previous state (e.g. "14" -> "014", both parse to
+                      // 14) — this is the sticky-leading-zero bug from the issue.
+                      // Writing the input's value directly forces the display to
+                      // match what's actually being submitted.
+                      e.target.value = String(clamped);
+                    }}
+                    onBlur={(e: FocusEvent<HTMLInputElement>) => {
+                      if (e.target.value === '') e.target.value = String(gridDays);
+                    }}
                   />
                 </label>
                 <label>
