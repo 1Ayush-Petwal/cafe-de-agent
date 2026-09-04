@@ -1,12 +1,67 @@
 :root {
-  color-scheme: light;
   font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Day theme (06:00-17:00 local, or sun/moon override): warm cream/gold,
+   per the Dalkom breakfast reference image. This is also the fallback
+   palette if the data-theme attribute is ever missing. */
+:root,
+:root[data-theme='day'] {
+  color-scheme: light;
+  --bg: #faf7f2;
+  --bg-elevated: #ffffff;
+  --bg-muted: #f5f5f5;
+  --bg-panel: #fdf3dd;
+  --panel-border: #d8b56b;
+  --text: #2a1c10;
+  --text-muted: #6b5a42;
+  --text-faint: #999;
+  --border: #ddd;
+  --primary: #6b4f2a;
+  --primary-contrast: #ffffff;
+  --primary-shadow: rgba(107, 79, 42, 0.25);
+  --chip-bg: #eef1f6;
+  --chip-text: #444;
+  --accent-soft-bg: #eaf1ff;
+  --accent-soft-text: #2f4d8a;
+  --rating-color: #b8860b;
+  --success-bg: #e3f3e3;
+  --success-text: #1e6b1e;
+  --danger-bg: #f3e3e3;
+  --danger-text: #6b1e1e;
+}
+
+/* Dinner theme (otherwise, or sun/moon override): dark brown/amber,
+   per the Dalkom dinner reference image. */
+:root[data-theme='dinner'] {
+  color-scheme: dark;
+  --bg: #1c1108;
+  --bg-elevated: #2b1c10;
+  --bg-muted: #241a10;
+  --bg-panel: #3a2712;
+  --panel-border: #a97f2e;
+  --text: #f5e8cf;
+  --text-muted: #c9b394;
+  --text-faint: #8a7a63;
+  --border: #4a3826;
+  --primary: #c9932f;
+  --primary-contrast: #241505;
+  --primary-shadow: rgba(201, 147, 47, 0.35);
+  --chip-bg: #3a2a1a;
+  --chip-text: #e8d9bd;
+  --accent-soft-bg: #3a2a1a;
+  --accent-soft-text: #e0b563;
+  --rating-color: #e0b563;
+  --success-bg: #24391f;
+  --success-text: #8fd88a;
+  --danger-bg: #3d2020;
+  --danger-text: #e28a8a;
 }
 
 body {
   margin: 0;
-  background: #faf7f2;
-  color: #222;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .app {
@@ -20,12 +75,12 @@ nav {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 0;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--border);
   margin-bottom: 1.5rem;
 }
 
 nav a {
-  color: #3a2a1a;
+  color: var(--text);
   text-decoration: none;
   font-weight: 600;
 }
@@ -36,14 +91,22 @@ nav a {
   align-items: center;
 }
 
+.theme-toggle {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .user-email {
-  color: #666;
+  color: var(--text-muted);
   font-weight: 400;
   font-size: 0.9rem;
 }
 
 .wallet-balance {
-  color: #3a2a1a;
+  color: var(--text);
   font-weight: 600;
   font-size: 0.9rem;
 }
@@ -64,16 +127,18 @@ nav a {
 
 .auth-page input {
   padding: 0.5rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text);
 }
 
 button {
   cursor: pointer;
   padding: 0.5rem 1rem;
-  border: 1px solid #6b4f2a;
-  background: #6b4f2a;
-  color: white;
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--primary-contrast);
   border-radius: 4px;
 }
 
@@ -83,14 +148,15 @@ button:disabled {
 }
 
 .error {
-  color: #b3261e;
+  color: var(--danger-text);
 }
 
 .notice {
   padding: 0.5rem 0.75rem;
-  background: #fff8e1;
-  border: 1px solid #e0c46c;
+  background: var(--bg-panel);
+  border: 1px solid var(--panel-border);
   border-radius: 4px;
+  color: var(--text);
 }
 
 .cafe-list {
@@ -103,14 +169,15 @@ button:disabled {
 .cafe-list li a {
   display: block;
   padding: 1rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: white;
+  background: var(--bg-elevated);
+  color: var(--text);
 }
 
 .cafe-list .area {
   display: block;
-  color: #777;
+  color: var(--text-muted);
   font-size: 0.85rem;
 }
 
@@ -123,18 +190,18 @@ button:disabled {
 }
 
 .pill {
-  border: 1px solid #ddd;
-  background: white;
-  color: #444;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
   border-radius: 999px;
   padding: 0.4rem 1rem;
   font-size: 0.85rem;
 }
 
 .pill-selected {
-  background: #6b4f2a;
-  border-color: #6b4f2a;
-  color: white;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-contrast);
 }
 
 .table-cards {
@@ -150,21 +217,21 @@ button:disabled {
   align-items: flex-start;
   gap: 0.4rem;
   padding: 1rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: white;
-  color: #222;
+  background: var(--bg-elevated);
+  color: var(--text);
   text-align: left;
 }
 
 .table-card.selected {
-  border-color: #6b4f2a;
-  box-shadow: 0 0 0 2px rgba(107, 79, 42, 0.25);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-shadow);
 }
 
 .table-card.reserved {
-  background: #f5f5f5;
-  color: #999;
+  background: var(--bg-muted);
+  color: var(--text-faint);
 }
 
 .table-label {
@@ -176,8 +243,8 @@ button:disabled {
   border-radius: 999px;
   font-size: 0.72rem;
   text-transform: uppercase;
-  background: #f3e3e3;
-  color: #6b1e1e;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .reserve-cta {
@@ -193,9 +260,10 @@ button:disabled {
   gap: 1rem;
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;
-  border: 1px solid #d8b56b;
-  background: #fdf3dd;
+  border: 1px solid var(--panel-border);
+  background: var(--bg-panel);
   border-radius: 8px;
+  color: var(--text);
 }
 
 .reservation-list {
@@ -207,9 +275,10 @@ button:disabled {
 
 .reservation-list li {
   padding: 1rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: white;
+  background: var(--bg-elevated);
+  color: var(--text);
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -227,13 +296,13 @@ button:disabled {
 }
 
 .status-booked {
-  background: #e3f3e3;
-  color: #1e6b1e;
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .status-cancelled {
-  background: #f3e3e3;
-  color: #6b1e1e;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 /* Store locator home page (issue #18) */
@@ -241,8 +310,10 @@ button:disabled {
   width: 100%;
   padding: 0.6rem 0.75rem;
   margin: 0.5rem 0 1rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text);
   box-sizing: border-box;
 }
 
@@ -260,17 +331,18 @@ button:disabled {
 
 .locator-card {
   padding: 0.85rem 1rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: white;
+  background: var(--bg-elevated);
+  color: var(--text);
   display: grid;
   gap: 0.4rem;
   cursor: pointer;
 }
 
 .locator-card.selected {
-  border-color: #2f6fed;
-  box-shadow: 0 0 0 2px rgba(47, 111, 237, 0.2);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-shadow);
 }
 
 .locator-card-head {
@@ -281,7 +353,7 @@ button:disabled {
 }
 
 .locator-card .rating {
-  color: #b8860b;
+  color: var(--rating-color);
   font-size: 0.9rem;
   white-space: nowrap;
 }
@@ -290,16 +362,16 @@ button:disabled {
   display: flex;
   gap: 0.75rem;
   font-size: 0.8rem;
-  color: #555;
+  color: var(--text-muted);
 }
 
 .locator-meta .open {
-  color: #1e6b1e;
+  color: var(--success-text);
   font-weight: 600;
 }
 
 .locator-meta .closed {
-  color: #b3261e;
+  color: var(--danger-text);
   font-weight: 600;
 }
 
@@ -310,8 +382,8 @@ button:disabled {
 }
 
 .cuisine-chip {
-  background: #eef1f6;
-  color: #444;
+  background: var(--chip-bg);
+  color: var(--chip-text);
   font-size: 0.72rem;
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
@@ -319,7 +391,7 @@ button:disabled {
 
 .directions-link {
   font-size: 0.8rem;
-  color: #2f6fed;
+  color: var(--primary);
   justify-self: start;
 }
 
@@ -327,7 +399,7 @@ button:disabled {
   height: 70vh;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
 }
 
 .cafe-pin-selected {
@@ -339,8 +411,8 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  background: #eaf1ff;
-  color: #2f4d8a;
+  background: var(--accent-soft-bg);
+  color: var(--accent-soft-text);
   font-size: 0.85rem;
   padding: 0.35rem 0.6rem;
   border-radius: 999px;
@@ -358,30 +430,30 @@ button:disabled {
 }
 
 .area-not-found {
-  color: #b3261e;
+  color: var(--danger-text);
   font-size: 0.9rem;
 }
 
 .sort-toggle {
   display: inline-flex;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 999px;
   overflow: hidden;
   margin-bottom: 0.75rem;
 }
 
 .sort-toggle button {
-  background: white;
+  background: var(--bg-elevated);
   border: none;
   padding: 0.4rem 1rem;
   cursor: pointer;
   font-size: 0.85rem;
-  color: #555;
+  color: var(--text-muted);
 }
 
 .sort-toggle button.active {
-  background: #2f6fed;
-  color: white;
+  background: var(--primary);
+  color: var(--primary-contrast);
 }
 
 .mode-cuisines {
@@ -394,8 +466,8 @@ button:disabled {
 }
 
 .cuisine-chip-button.selected {
-  background: #2f6fed;
-  color: white;
+  background: var(--primary);
+  color: var(--primary-contrast);
 }
 
 .offline-banner {
@@ -408,10 +480,10 @@ button:disabled {
 
 .locator-search-as-locality {
   padding: 0.6rem 1rem;
-  color: #2f6fed;
+  color: var(--primary);
   cursor: pointer;
   font-size: 0.85rem;
-  border: 1px dashed #ddd;
+  border: 1px dashed var(--border);
   border-radius: 8px;
-  background: white;
+  background: var(--bg-elevated);
 }

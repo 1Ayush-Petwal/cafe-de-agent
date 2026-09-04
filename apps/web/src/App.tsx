@@ -8,6 +8,7 @@ import { LoginPage } from './pages/LoginPage';
 import { MyReservationsPage } from './pages/MyReservationsPage';
 import { OwnerDashboardPage } from './pages/OwnerDashboardPage';
 import { SignupPage } from './pages/SignupPage';
+import { ThemeToggle } from './theme/ThemeToggle';
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { isAuthenticated } = useAuth();
@@ -29,6 +30,7 @@ export function App() {
       <nav>
         <Link to="/cafes">Café De App</Link>
         <div className="nav-links">
+          <ThemeToggle />
           <Link to="/cafes">Cafés</Link>
           {isAuthenticated ? (
             <>
