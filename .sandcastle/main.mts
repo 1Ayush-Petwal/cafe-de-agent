@@ -50,8 +50,8 @@ const MAX_ITERATIONS = 10;
 const hooks = {
   sandbox: {
     onSandboxReady: [
-      { command: "npm install" },
-      { command: "bash .sandcastle/start-services.sh" },
+      { command: "npm install", timeoutMs: 600_000 },
+      { command: "bash .sandcastle/start-services.sh", timeoutMs: 300_000 },
     ],
   },
 };

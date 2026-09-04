@@ -46,6 +46,10 @@ export default defineConfig({
     port: 5173,
     // No rewrite: the API serves under `/api` in every environment (see
     // apps/api/src/main.ts), so dev and prod hit identical paths.
-    proxy: { '/api': { target: 'http://localhost:3000', changeOrigin: true } },
+    // dev.sh exports API_PORT from apps/api/.env so this follows the port the
+    // API actually listens on; 3000 matches main.ts's own default.
+    proxy: {
+      '/api': { target: `http://localhost:${process.env.API_PORT || 3000}`, changeOrigin: true },
+    },
   },
 });
