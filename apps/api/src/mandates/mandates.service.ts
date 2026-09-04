@@ -1,8 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Mandate } from '../entities/mandate.entity';
 import { MandateStatus } from '../entities/mandate-status.enum';
+import { Mandate } from '../entities/mandate.entity';
 import { CreateMandateDto } from './dto/create-mandate.dto';
 import { signMandateConstraints } from './mandate-signature';
 
