@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, Link } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
+import { OfflineBanner } from './OfflineBanner';
 import { AgentChatPage } from './pages/AgentChatPage';
 import { CafeAvailabilityPage } from './pages/CafeAvailabilityPage';
 import { CafeListPage } from './pages/CafeListPage';
@@ -24,6 +25,7 @@ export function App() {
 
   return (
     <div className="app">
+      <OfflineBanner />
       <nav>
         <Link to="/cafes">Café De App</Link>
         <div className="nav-links">

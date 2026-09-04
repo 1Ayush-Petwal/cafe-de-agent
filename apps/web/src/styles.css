@@ -398,6 +398,14 @@ button:disabled {
   color: white;
 }
 
+.offline-banner {
+  background: #6b1e1e;
+  color: white;
+  text-align: center;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+}
+
 .locator-search-as-locality {
   padding: 0.6rem 1rem;
   color: #2f6fed;
