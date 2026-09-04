@@ -55,6 +55,14 @@ export class AgentWorkflow {
   @Column({ type: 'uuid', nullable: true })
   reservationId!: string | null;
 
+  /**
+   * Issue #7 (PRD area D): a conversation may carry a standing mandate. Null
+   * means the existing per-action AWAITING_APPROVAL behaviour is completely
+   * unaffected — this column is the single switch the worker checks.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  mandateId!: string | null;
+
   /** Per-session guardrail (issue #10): caps how many tables this workflow may hold, so a runaway loop can't spam holds. */
   @Column({ type: 'int', default: 0 })
   holdCount!: number;

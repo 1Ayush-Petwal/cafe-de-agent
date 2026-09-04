@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AgentTurnDto, AgentWorkflowDto, ApiError, api } from '../api/client';
+import { AgentTurnDto, AgentWorkflowDto, ApiError, MandateDto, api } from '../api/client';
 
 function turnLabel(turn: AgentTurnDto): string {
   if (turn.text) {
@@ -23,8 +23,10 @@ function turnLabel(turn: AgentTurnDto): string {
  */
 export function AgentChatPage() {
   const [message, setMessage] = useState('');
+  const [mandateId, setMandateId] = useState('');
   const [workflowId, setWorkflowId] = useState<string | null>(null);
   const [workflow, setWorkflow] = useState<AgentWorkflowDto | null>(null);
+  const [mandate, setMandate] = useState<MandateDto | null>(null);
   const [sending, setSending] = useState(false);
   const [approving, setApproving] = useState(false);
   const [answerText, setAnswerText] = useState('');
@@ -45,14 +47,25 @@ export function AgentChatPage() {
     return api.subscribeAgentWorkflow(workflowId, refresh);
   }, [workflowId, refresh]);
 
+  // Issue #7 (PRD area D): headroom visible in chat, refetched alongside the
+  // workflow itself so it stays live as the agent spends against it.
+  useEffect(() => {
+    if (!workflow?.mandateId) {
+      setMandate(null);
+      return;
+    }
+    api.getMandate(workflow.mandateId).then(setMandate).catch(() => undefined);
+  }, [workflow]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim()) return;
     setError(null);
     setSending(true);
     try {
-      const result = await api.startAgentWorkflow(message.trim());
+      const result = await api.startAgentWorkflow(message.trim(), mandateId.trim() || undefined);
       setWorkflow(null);
+      setMandate(null);
       setWorkflowId(result.id);
       setMessage('');
     } catch (err) {
@@ -104,6 +117,12 @@ export function AgentChatPage() {
           placeholder="Book a table for 2 tonight"
           disabled={sending}
         />
+        <input
+          value={mandateId}
+          onChange={(e) => setMandateId(e.target.value)}
+          placeholder="Mandate id (optional)"
+          disabled={sending}
+        />
         <button type="submit" disabled={sending || !message.trim()}>
           {sending ? '…' : 'Send'}
         </button>
@@ -113,6 +132,12 @@ export function AgentChatPage() {
 
       {workflow && (
         <div className="agent-conversation">
+          {mandate && (
+            <p className="mandate-chip">
+              Mandate: ₹{(mandate.remainingMinor / 100).toFixed(2)} of ₹{(mandate.maxTotalMinor / 100).toFixed(2)}{' '}
+              left, {mandate.remainingBookings} of {mandate.maxBookings} bookings left.
+            </p>
+          )}
           <p className="agent-you">You: {workflow.request}</p>
           {workflow.history
             .filter((turn) => turn.role === 'model' || turn.functionResponse)

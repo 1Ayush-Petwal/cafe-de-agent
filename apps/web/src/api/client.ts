@@ -129,6 +129,8 @@ export interface AgentWorkflowDto {
   pendingAction: { name: string; args: Record<string, unknown> } | null;
   reservationId: string | null;
   failureReason: string | null;
+  /** Issue #7 (PRD area D): null unless this conversation was started with a mandate attached. */
+  mandateId: string | null;
 }
 
 export interface OwnerBookingDto {
@@ -286,10 +288,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ url }),
     }),
-  startAgentWorkflow: (message: string) =>
+  startAgentWorkflow: (message: string, mandateId?: string) =>
     request<{ id: string; status: string }>('/agent/workflows', {
       method: 'POST',
-      body: JSON.stringify({ message }),
+      body: JSON.stringify(mandateId ? { message, mandateId } : { message }),
     }),
   getAgentWorkflow: (id: string) => request<AgentWorkflowDto>(`/agent/workflows/${id}`),
   approveAgentWorkflow: (id: string) =>
