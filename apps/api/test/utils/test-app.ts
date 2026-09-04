@@ -32,7 +32,7 @@ export async function createTestApp(): Promise<INestApplication> {
 export async function truncateAll(app: INestApplication): Promise<void> {
   const dataSource = app.get(DataSource);
   await dataSource.query(
-    'TRUNCATE TABLE agent_workflows, idempotency_keys, notifications, notification_jobs, webhook_jobs, webhook_endpoints, partner_api_keys, mandates, payments, reservations, slots, tables, cafes, users RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE agent_decisions, agent_workflows, idempotency_keys, notifications, notification_jobs, webhook_jobs, webhook_endpoints, partner_api_keys, mandates, payments, reservations, slots, tables, cafes, users RESTART IDENTITY CASCADE',
   );
 }
 

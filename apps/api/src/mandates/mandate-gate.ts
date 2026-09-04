@@ -11,6 +11,37 @@ export interface MandateCheckInput {
 
 export type MandateGateResult = { verdict: 'ALLOW' } | { verdict: 'DENY'; reason: MandateDenyReason };
 
+/** Issue #6 (PRD area C): the mandate's constraint and consumption state, frozen for the decision log. */
+export interface MandateConstraintsSnapshot {
+  maxPerBookingMinor: number;
+  maxTotalMinor: number;
+  maxBookings: number;
+  allowedLocalities: string[];
+  windowStart: string;
+  windowEnd: string;
+  consumedMinor: number;
+  consumedBookings: number;
+  status: MandateStatus;
+  expiresAt: string;
+  revokedAt: string | null;
+}
+
+export function snapshotConstraints(mandate: Mandate): MandateConstraintsSnapshot {
+  return {
+    maxPerBookingMinor: mandate.maxPerBookingMinor,
+    maxTotalMinor: mandate.maxTotalMinor,
+    maxBookings: mandate.maxBookings,
+    allowedLocalities: mandate.allowedLocalities,
+    windowStart: mandate.windowStart.toISOString(),
+    windowEnd: mandate.windowEnd.toISOString(),
+    consumedMinor: mandate.consumedMinor,
+    consumedBookings: mandate.consumedBookings,
+    status: mandate.status,
+    expiresAt: mandate.expiresAt.toISOString(),
+    revokedAt: mandate.revokedAt ? mandate.revokedAt.toISOString() : null,
+  };
+}
+
 /**
  * The single source of truth for "why would this mandate refuse this booking" —
  * shared by the read-only preview and by {@link authorizeAndConsume}'s

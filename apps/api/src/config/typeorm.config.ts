@@ -1,4 +1,5 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { AgentDecision } from '../entities/agent-decision.entity';
 import { AgentWorkflow } from '../entities/agent-workflow.entity';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { Cafe } from '../entities/cafe.entity';
@@ -33,6 +34,7 @@ export function buildTypeOrmConfig(): TypeOrmModuleOptions {
       PartnerApiKey,
       WebhookEndpoint,
       WebhookJob,
+      AgentDecision,
     ],
     // No migrations yet at M0 (tracer bullet); schema is generated from
     // entities. Migrations arrive when the schema needs to survive prod data.

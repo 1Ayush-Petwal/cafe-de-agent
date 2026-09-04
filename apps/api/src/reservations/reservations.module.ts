@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { DecisionsModule } from '../decisions/decisions.module';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { IdempotencyKey } from '../entities/idempotency-key.entity';
 import { Payment } from '../entities/payment.entity';
@@ -20,6 +21,7 @@ import { ReservationsService } from './reservations.service';
     HoldsModule,
     RealtimeModule,
     MandatesModule,
+    DecisionsModule,
   ],
   controllers: [ReservationsController],
   providers: [ReservationsService],

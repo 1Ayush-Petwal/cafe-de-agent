@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { DecisionLogService } from '../decisions/decision-log.service';
+import { AgentDecisionStep } from '../entities/agent-decision-step.enum';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { IdempotencyKey } from '../entities/idempotency-key.entity';
 import { NotificationJob } from '../entities/notification-job.entity';
@@ -64,6 +66,7 @@ export class ReservationsService {
     private readonly holds: HoldsService,
     private readonly events: AvailabilityEventsService,
     private readonly mandates: MandatesService,
+    private readonly decisionLog: DecisionLogService,
   ) {
     this.holdTtlSeconds = Number(process.env.HOLD_TTL_SECONDS) || DEFAULT_HOLD_TTL_SECONDS;
   }
@@ -405,7 +408,7 @@ export class ReservationsService {
    */
   async confirmHold(userId: string, dto: ConfirmHoldDto, idempotencyKey?: string): Promise<Reservation> {
     if (!idempotencyKey) {
-      return this.executeConfirm(userId, dto);
+      return this.executeConfirm(userId, dto, idempotencyKey);
     }
 
     const requestHash = createHash('sha256')
@@ -436,7 +439,7 @@ export class ReservationsService {
     }
 
     try {
-      const reservation = await this.executeConfirm(userId, dto);
+      const reservation = await this.executeConfirm(userId, dto, idempotencyKey);
       await this.idempotencyKeys.update(
         { userId, key: idempotencyKey },
         { statusCode: HttpStatus.CREATED, responseBody: { ...reservation } },
@@ -489,7 +492,7 @@ export class ReservationsService {
    * no reservation, no payment and no consumption, identically to an
    * insufficient balance.
    */
-  private async executeConfirm(userId: string, dto: ConfirmHoldDto): Promise<Reservation> {
+  private async executeConfirm(userId: string, dto: ConfirmHoldDto, idempotencyKey?: string): Promise<Reservation> {
     // Authoritative re-check of the 10-hour window (issue #17): the hold may
     // have been taken before a conflicting booking at this café existed, so
     // re-validate here alongside the write rather than trusting the hold-time
@@ -517,14 +520,63 @@ export class ReservationsService {
         const saved = await this.writeBookingAndCharge(manager, userId, dto);
 
         if (dto.mandateId) {
+          const requestedAction = {
+            amountMinor: slot.priceMinor,
+            locality: table.cafe.area,
+            slotTime: slot.slotTime.toISOString(),
+          };
+          const authorizeStart = Date.now();
           const gate = await this.mandates.authorizeAndConsume(manager, dto.mandateId, {
             amountMinor: slot.priceMinor,
             locality: table.cafe.area,
             slotTime: slot.slotTime,
           });
+          const authorizeLatencyMs = Date.now() - authorizeStart;
+
           if (gate.verdict === 'DENY') {
+            // Issue #6 (PRD area C): standalone, not `manager` — throwing
+            // below rolls back everything this transaction wrote, including
+            // the reservation and charge `writeBookingAndCharge` just made.
+            // The denial itself must survive that rollback, so it is
+            // recorded on its own connection rather than inside the doomed
+            // transaction.
+            await this.decisionLog.record(undefined, {
+              mandateId: dto.mandateId,
+              step: AgentDecisionStep.AUTHORIZE,
+              verdict: 'DENY',
+              denyReason: gate.reason,
+              requestedAction,
+              constraintsSnap: gate.snapshot,
+              latencyMs: authorizeLatencyMs,
+              holdId: dto.holdId,
+              idempotencyKey: idempotencyKey ?? null,
+            });
             throw new MandateDeniedError(gate.reason);
           }
+
+          const payment = await manager.findOneOrFail(Payment, { where: { reservationId: saved.id } });
+          const decisionFields = {
+            mandateId: dto.mandateId,
+            verdict: 'ALLOW' as const,
+            denyReason: null,
+            requestedAction,
+            constraintsSnap: gate.snapshot,
+            holdId: dto.holdId,
+            paymentId: payment.id,
+            idempotencyKey: idempotencyKey ?? null,
+          };
+          // Both rows ride inside `manager`'s transaction: if anything below
+          // still fails, they roll back with the booking they describe.
+          await this.decisionLog.record(manager, {
+            ...decisionFields,
+            step: AgentDecisionStep.AUTHORIZE,
+            latencyMs: authorizeLatencyMs,
+          });
+          await this.decisionLog.record(manager, {
+            ...decisionFields,
+            step: AgentDecisionStep.CONFIRM,
+            latencyMs: Date.now() - authorizeStart,
+          });
         }
 
         // Transactional outbox (issue #6): the notify job commits atomically

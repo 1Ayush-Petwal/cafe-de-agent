@@ -1,13 +1,21 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
+import { DecisionLogService } from '../decisions/decision-log.service';
+import { AgentDecisionStep } from '../entities/agent-decision-step.enum';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { MandateStatus } from '../entities/mandate-status.enum';
 import { Mandate } from '../entities/mandate.entity';
 import { Slot } from '../entities/slot.entity';
 import { CreateMandateDto } from './dto/create-mandate.dto';
 import { PreviewMandateDto } from './dto/preview-mandate.dto';
-import { evaluateMandate, MandateCheckInput, MandateGateResult } from './mandate-gate';
+import {
+  evaluateMandate,
+  MandateCheckInput,
+  MandateConstraintsSnapshot,
+  MandateGateResult,
+  snapshotConstraints,
+} from './mandate-gate';
 import { signMandateConstraints } from './mandate-signature';
 
 /** What a customer sees: the signed grant plus the headroom derived from it. */
@@ -59,6 +67,7 @@ export class MandatesService {
     @InjectRepository(Mandate) private readonly mandates: Repository<Mandate>,
     @InjectRepository(CafeTable) private readonly tables: Repository<CafeTable>,
     @InjectRepository(Slot) private readonly slots: Repository<Slot>,
+    private readonly decisionLog: DecisionLogService,
   ) {}
 
   async grant(userId: string, dto: CreateMandateDto): Promise<MandateView> {
@@ -120,12 +129,29 @@ export class MandatesService {
    * and is the actual arbiter.
    */
   async previewMandate(userId: string, mandateId: string, dto: PreviewMandateDto): Promise<MandateGateResult> {
+    const start = Date.now();
     const mandate = await this.findOwned(userId, mandateId);
     const table = await this.tables.findOne({ where: { id: dto.tableId }, relations: { cafe: true } });
     if (!table) throw new NotFoundException('Table not found');
     const slot = await this.slots.findOne({ where: { id: dto.slotId } });
     if (!slot || slot.cafeId !== table.cafeId) throw new NotFoundException('Slot not found for this table');
-    return evaluateMandate(mandate, { amountMinor: slot.priceMinor, locality: table.cafe.area, slotTime: slot.slotTime });
+
+    const input: MandateCheckInput = { amountMinor: slot.priceMinor, locality: table.cafe.area, slotTime: slot.slotTime };
+    const result = evaluateMandate(mandate, input);
+
+    // Issue #6 (PRD area C): PROPOSE — a preview has no transaction of its
+    // own and mutates nothing, so this is always a standalone insert.
+    await this.decisionLog.record(undefined, {
+      mandateId,
+      step: AgentDecisionStep.PROPOSE,
+      verdict: result.verdict,
+      denyReason: result.verdict === 'DENY' ? result.reason : null,
+      requestedAction: { amountMinor: input.amountMinor, locality: input.locality, slotTime: input.slotTime.toISOString() },
+      constraintsSnap: snapshotConstraints(mandate),
+      latencyMs: Date.now() - start,
+    });
+
+    return result;
   }
 
   /**
@@ -143,7 +169,7 @@ export class MandatesService {
     manager: EntityManager,
     mandateId: string,
     input: MandateCheckInput,
-  ): Promise<MandateGateResult> {
+  ): Promise<MandateGateResult & { snapshot: MandateConstraintsSnapshot }> {
     const result = await manager
       .createQueryBuilder()
       .update(Mandate)
@@ -171,12 +197,17 @@ export class MandatesService {
       )
       .execute();
 
+    // Issue #6 (PRD area C): re-read regardless of outcome — the ALLOW
+    // branch needs the post-consume state as its snapshot, the DENY branch
+    // already needed this read to explain the reason.
+    const mandate = await manager.findOneOrFail(Mandate, { where: { id: mandateId } });
+    const snapshot = snapshotConstraints(mandate);
+
     if (result.affected === 1) {
-      return { verdict: 'ALLOW' };
+      return { verdict: 'ALLOW', snapshot };
     }
 
-    const mandate = await manager.findOneOrFail(Mandate, { where: { id: mandateId } });
-    return evaluateMandate(mandate, input);
+    return { ...evaluateMandate(mandate, input), snapshot };
   }
 
   /** Existence + ownership only — no mutation, so safe to call ahead of a transaction. */
