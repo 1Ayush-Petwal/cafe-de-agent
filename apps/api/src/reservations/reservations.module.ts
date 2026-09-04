@@ -8,6 +8,7 @@ import { Reservation } from '../entities/reservation.entity';
 import { Slot } from '../entities/slot.entity';
 import { User } from '../entities/user.entity';
 import { HoldsModule } from '../holds/holds.module';
+import { MandatesModule } from '../mandates/mandates.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { ReservationsController } from './reservations.controller';
 import { ReservationsService } from './reservations.service';
@@ -18,6 +19,7 @@ import { ReservationsService } from './reservations.service';
     AuthModule,
     HoldsModule,
     RealtimeModule,
+    MandatesModule,
   ],
   controllers: [ReservationsController],
   providers: [ReservationsService],

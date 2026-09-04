@@ -5,10 +5,10 @@ import { MandateStatus } from './mandate-status.enum';
  * Issue #4 (PRD area B): a human's signed, bounded grant of authority to an
  * agent. Constraints are frozen at grant time and covered by `signature`;
  * consumption counters live on the same row but outside the signature so
- * spending never invalidates it (see mandates/mandate-signature.ts). This
- * slice only grants, reads and revokes — `consumedMinor`/`consumedBookings`
- * are carried here for issue #5 (the atomic gate) to increment; nothing in
- * this slice writes to them.
+ * spending never invalidates it (see mandates/mandate-signature.ts).
+ * `consumedMinor`/`consumedBookings` are only ever incremented by the
+ * single conditional UPDATE in `authorizeAndConsume` (issue #5, PRD area B)
+ * — never read-then-written.
  */
 @Entity({ name: 'mandates' })
 export class Mandate {

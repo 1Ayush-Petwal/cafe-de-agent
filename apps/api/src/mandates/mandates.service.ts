@@ -1,9 +1,13 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
+import { CafeTable } from '../entities/cafe-table.entity';
 import { MandateStatus } from '../entities/mandate-status.enum';
 import { Mandate } from '../entities/mandate.entity';
+import { Slot } from '../entities/slot.entity';
 import { CreateMandateDto } from './dto/create-mandate.dto';
+import { PreviewMandateDto } from './dto/preview-mandate.dto';
+import { evaluateMandate, MandateCheckInput, MandateGateResult } from './mandate-gate';
 import { signMandateConstraints } from './mandate-signature';
 
 /** What a customer sees: the signed grant plus the headroom derived from it. */
@@ -51,7 +55,11 @@ function toView(mandate: Mandate): MandateView {
 
 @Injectable()
 export class MandatesService {
-  constructor(@InjectRepository(Mandate) private readonly mandates: Repository<Mandate>) {}
+  constructor(
+    @InjectRepository(Mandate) private readonly mandates: Repository<Mandate>,
+    @InjectRepository(CafeTable) private readonly tables: Repository<CafeTable>,
+    @InjectRepository(Slot) private readonly slots: Repository<Slot>,
+  ) {}
 
   async grant(userId: string, dto: CreateMandateDto): Promise<MandateView> {
     const windowStart = new Date(dto.windowStart);
@@ -100,6 +108,80 @@ export class MandatesService {
       await this.mandates.save(mandate);
     }
     return toView(mandate);
+  }
+
+  /**
+   * Issue #5 (PRD area B): the advisory half of the gate. Read-only —
+   * resolves the candidate booking's price/locality/time from its
+   * table+slot (the same fields the binding check evaluates) and runs them
+   * through the same {@link evaluateMandate} logic, but writes nothing. A
+   * `DENY` here means no payment intent is ever created; an `ALLOW` here is
+   * not a promise — the binding check at confirm re-evaluates atomically
+   * and is the actual arbiter.
+   */
+  async previewMandate(userId: string, mandateId: string, dto: PreviewMandateDto): Promise<MandateGateResult> {
+    const mandate = await this.findOwned(userId, mandateId);
+    const table = await this.tables.findOne({ where: { id: dto.tableId }, relations: { cafe: true } });
+    if (!table) throw new NotFoundException('Table not found');
+    const slot = await this.slots.findOne({ where: { id: dto.slotId } });
+    if (!slot || slot.cafeId !== table.cafeId) throw new NotFoundException('Slot not found for this table');
+    return evaluateMandate(mandate, { amountMinor: slot.priceMinor, locality: table.cafe.area, slotTime: slot.slotTime });
+  }
+
+  /**
+   * Issue #5 (PRD area B): the binding half of the gate. One conditional
+   * `UPDATE ... RETURNING` evaluates every ceiling in the same statement
+   * that increments the consumption counters — must run inside the
+   * caller's transaction (the one that also writes the reservation and
+   * payment), so a denial rolls the whole booking back atomically. Zero
+   * rows affected is the denial; there is no prior read of the mandate to
+   * decide the outcome, only a read *after* a denial, purely to explain it
+   * (see {@link evaluateMandate}) — that lookup never feeds back into a
+   * write, so it introduces no read-then-write race.
+   */
+  async authorizeAndConsume(
+    manager: EntityManager,
+    mandateId: string,
+    input: MandateCheckInput,
+  ): Promise<MandateGateResult> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(Mandate)
+      .set({
+        consumedMinor: () => `"consumedMinor" + ${input.amountMinor}`,
+        consumedBookings: () => '"consumedBookings" + 1',
+      })
+      .where(
+        `id = :mandateId
+         AND status = :status
+         AND "expiresAt" > :now
+         AND :amountMinor <= "maxPerBookingMinor"
+         AND "consumedMinor" + :amountMinor <= "maxTotalMinor"
+         AND "consumedBookings" + 1 <= "maxBookings"
+         AND :locality = ANY("allowedLocalities")
+         AND :slotTime BETWEEN "windowStart" AND "windowEnd"`,
+        {
+          mandateId,
+          status: MandateStatus.ACTIVE,
+          now: new Date(),
+          amountMinor: input.amountMinor,
+          locality: input.locality,
+          slotTime: input.slotTime,
+        },
+      )
+      .execute();
+
+    if (result.affected === 1) {
+      return { verdict: 'ALLOW' };
+    }
+
+    const mandate = await manager.findOneOrFail(Mandate, { where: { id: mandateId } });
+    return evaluateMandate(mandate, input);
+  }
+
+  /** Existence + ownership only — no mutation, so safe to call ahead of a transaction. */
+  async assertOwned(userId: string, mandateId: string): Promise<void> {
+    await this.findOwned(userId, mandateId);
   }
 
   private async findOwned(userId: string, mandateId: string): Promise<Mandate> {

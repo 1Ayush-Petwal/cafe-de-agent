@@ -3,6 +3,8 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt.strategy';
 import { CreateMandateDto } from './dto/create-mandate.dto';
+import { PreviewMandateDto } from './dto/preview-mandate.dto';
+import { MandateGateResult } from './mandate-gate';
 import { MandatesService, MandateView } from './mandates.service';
 
 @Controller('mandates')
@@ -18,6 +20,16 @@ export class MandatesController {
   @Get(':id')
   getStatus(@CurrentUser() user: JwtPayload, @Param('id') id: string): Promise<MandateView> {
     return this.mandates.getStatus(user.sub, id);
+  }
+
+  /** Issue #5: advisory, read-only — see {@link MandatesService.previewMandate}. */
+  @Post(':id/preview')
+  preview(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: PreviewMandateDto,
+  ): Promise<MandateGateResult> {
+    return this.mandates.previewMandate(user.sub, id, dto);
   }
 
   @Post(':id/revoke')

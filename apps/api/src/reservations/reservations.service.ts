@@ -21,6 +21,8 @@ import { User } from '../entities/user.entity';
 import { WebhookEventType } from '../entities/webhook-event-type.enum';
 import { WebhookJob } from '../entities/webhook-job.entity';
 import { Hold, HoldsService } from '../holds/holds.service';
+import { MandateDenyReason } from '../mandates/mandate-deny-reason.enum';
+import { MandatesService } from '../mandates/mandates.service';
 import { AvailabilityEventsService } from '../realtime/availability-events.service';
 import { BookingStrategy } from './booking-strategy.enum';
 import { ConfirmHoldDto } from './dto/confirm-hold.dto';
@@ -41,6 +43,13 @@ function isUniqueViolation(err: unknown): boolean {
 /** Thrown by {@link ReservationsService.chargeWallet} when the conditional decrement affects zero rows. */
 class InsufficientBalanceError extends Error {}
 
+/** Thrown when {@link MandatesService.authorizeAndConsume} returns a DENY inside the confirm transaction. */
+class MandateDeniedError extends Error {
+  constructor(readonly reason: MandateDenyReason) {
+    super(`Mandate denied: ${reason}`);
+  }
+}
+
 @Injectable()
 export class ReservationsService {
   private readonly holdTtlSeconds: number;
@@ -54,6 +63,7 @@ export class ReservationsService {
     private readonly dataSource: DataSource,
     private readonly holds: HoldsService,
     private readonly events: AvailabilityEventsService,
+    private readonly mandates: MandatesService,
   ) {
     this.holdTtlSeconds = Number(process.env.HOLD_TTL_SECONDS) || DEFAULT_HOLD_TTL_SECONDS;
   }
@@ -471,6 +481,13 @@ export class ReservationsService {
    * balance needs no separate "release the hold" step — the slot is already
    * free — and simply leaves no reservation or payment row behind (the whole
    * transaction rolls back).
+   *
+   * Issue #5 (PRD area B): when `dto.mandateId` is set, the same transaction
+   * also runs `authorizeAndConsume` — the binding half of the gate — right
+   * beside the wallet charge, which is already exactly this shape. A `DENY`
+   * throws and rolls back the whole transaction, so a denied confirm leaves
+   * no reservation, no payment and no consumption, identically to an
+   * insufficient balance.
    */
   private async executeConfirm(userId: string, dto: ConfirmHoldDto): Promise<Reservation> {
     // Authoritative re-check of the 10-hour window (issue #17): the hold may
@@ -481,6 +498,14 @@ export class ReservationsService {
     const slot = await this.slots.findOneOrFail({ where: { id: dto.slotId } });
     await this.assertWithinWindowFree(userId, dto.tableId, slot);
 
+    const table = await this.tables.findOneOrFail({ where: { id: dto.tableId }, relations: { cafe: true } });
+    if (dto.mandateId) {
+      // Existence + ownership only — no mutation, so safe ahead of the hold
+      // consume and the transaction; the atomic UPDATE below is still the
+      // sole arbiter of the ceilings themselves.
+      await this.mandates.assertOwned(userId, dto.mandateId);
+    }
+
     const consumed = await this.holds.consume(userId, dto.tableId, dto.slotId, dto.holdId);
     if (!consumed) {
       throw new GoneException('Your hold expired or was already used — please try again');
@@ -490,6 +515,18 @@ export class ReservationsService {
     try {
       reservation = await this.dataSource.transaction(async (manager) => {
         const saved = await this.writeBookingAndCharge(manager, userId, dto);
+
+        if (dto.mandateId) {
+          const gate = await this.mandates.authorizeAndConsume(manager, dto.mandateId, {
+            amountMinor: slot.priceMinor,
+            locality: table.cafe.area,
+            slotTime: slot.slotTime,
+          });
+          if (gate.verdict === 'DENY') {
+            throw new MandateDeniedError(gate.reason);
+          }
+        }
+
         // Transactional outbox (issue #6): the notify job commits atomically
         // with the booking, so a confirmed reservation can never end up
         // without one — the worker (a separate process) drains this queue
@@ -505,10 +542,12 @@ export class ReservationsService {
         return saved;
       });
     } catch (err) {
+      if (err instanceof MandateDeniedError) {
+        throw new HttpException({ message: err.message, verdict: 'DENY', reason: err.reason }, HttpStatus.FORBIDDEN);
+      }
       return this.translateBookingError(err, userId);
     }
 
-    const table = await this.tables.findOneOrFail({ where: { id: dto.tableId } });
     await this.events.publish({
       type: 'confirmed',
       cafeId: table.cafeId,
