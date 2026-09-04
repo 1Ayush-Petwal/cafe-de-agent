@@ -2,9 +2,9 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtPayload } from '../auth/jwt.strategy';
-import { MandatesService } from '../mandates/mandates.service';
 import { AgentWorkflowStatus } from '../entities/agent-workflow-status.enum';
 import { AgentWorkflow } from '../entities/agent-workflow.entity';
+import { MandatesService } from '../mandates/mandates.service';
 
 @Injectable()
 export class AgentService {
