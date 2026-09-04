@@ -520,17 +520,14 @@ export class ReservationsService {
         const saved = await this.writeBookingAndCharge(manager, userId, dto);
 
         if (dto.mandateId) {
+          const check = { amountMinor: slot.priceMinor, locality: table.cafe.area, slotTime: slot.slotTime };
           const requestedAction = {
-            amountMinor: slot.priceMinor,
-            locality: table.cafe.area,
-            slotTime: slot.slotTime.toISOString(),
+            amountMinor: check.amountMinor,
+            locality: check.locality,
+            slotTime: check.slotTime.toISOString(),
           };
           const authorizeStart = Date.now();
-          const gate = await this.mandates.authorizeAndConsume(manager, dto.mandateId, {
-            amountMinor: slot.priceMinor,
-            locality: table.cafe.area,
-            slotTime: slot.slotTime,
-          });
+          const gate = await this.mandates.authorizeAndConsume(manager, dto.mandateId, check);
           const authorizeLatencyMs = Date.now() - authorizeStart;
 
           if (gate.verdict === 'DENY') {
