@@ -158,6 +158,27 @@ export interface WebhookEndpointDto {
   updatedAt: string;
 }
 
+/** Issue #4 (PRD area B): a signed, bounded grant of authority to an agent — created, read and revoked here; not yet enforced. */
+export interface MandateDto {
+  id: string;
+  userId: string;
+  maxPerBookingMinor: number;
+  maxTotalMinor: number;
+  maxBookings: number;
+  allowedLocalities: string[];
+  windowStart: string;
+  windowEnd: string;
+  consumedMinor: number;
+  consumedBookings: number;
+  remainingMinor: number;
+  remainingBookings: number;
+  status: 'active' | 'revoked';
+  expiresAt: string;
+  revokedAt: string | null;
+  signature: string;
+  createdAt: string;
+}
+
 export const api = {
   signup: (email: string, password: string, role?: 'customer' | 'owner') =>
     request<AuthResponse>('/auth/signup', {
@@ -289,4 +310,14 @@ export const api = {
     source.addEventListener('open', onChange);
     return () => source.close();
   },
+  grantMandate: (dto: {
+    maxPerBookingMinor: number;
+    maxTotalMinor: number;
+    maxBookings: number;
+    allowedLocalities: string[];
+    windowStart: string;
+    windowEnd: string;
+  }) => request<MandateDto>('/mandates', { method: 'POST', body: JSON.stringify(dto) }),
+  getMandate: (id: string) => request<MandateDto>(`/mandates/${id}`),
+  revokeMandate: (id: string) => request<MandateDto>(`/mandates/${id}/revoke`, { method: 'POST' }),
 };

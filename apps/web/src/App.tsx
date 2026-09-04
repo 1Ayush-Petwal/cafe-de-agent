@@ -6,6 +6,7 @@ import { AgentChatPage } from './pages/AgentChatPage';
 import { CafeAvailabilityPage } from './pages/CafeAvailabilityPage';
 import { CafeListPage } from './pages/CafeListPage';
 import { LoginPage } from './pages/LoginPage';
+import { MandatePage } from './pages/MandatePage';
 import { MyReservationsPage } from './pages/MyReservationsPage';
 import { OwnerDashboardPage } from './pages/OwnerDashboardPage';
 import { SignupPage } from './pages/SignupPage';
@@ -41,6 +42,7 @@ export function App() {
                 <>
                   <Link to="/reservations">My reservations</Link>
                   <Link to="/agent">Booking agent</Link>
+                  <Link to="/mandate">Agent mandate</Link>
                 </>
               )}
               <span className="user-email">{user?.email}</span>
@@ -75,6 +77,14 @@ export function App() {
             element={
               <RequireAuth>
                 <AgentChatPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/mandate"
+            element={
+              <RequireAuth>
+                <MandatePage />
               </RequireAuth>
             }
           />

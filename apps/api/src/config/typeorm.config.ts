@@ -3,6 +3,7 @@ import { AgentWorkflow } from '../entities/agent-workflow.entity';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { Cafe } from '../entities/cafe.entity';
 import { IdempotencyKey } from '../entities/idempotency-key.entity';
+import { Mandate } from '../entities/mandate.entity';
 import { NotificationJob } from '../entities/notification-job.entity';
 import { Notification } from '../entities/notification.entity';
 import { PartnerApiKey } from '../entities/partner-api-key.entity';
@@ -27,6 +28,7 @@ export function buildTypeOrmConfig(): TypeOrmModuleOptions {
       NotificationJob,
       Notification,
       IdempotencyKey,
+      Mandate,
       AgentWorkflow,
       PartnerApiKey,
       WebhookEndpoint,

@@ -22,6 +22,8 @@ services:
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 1d
+      - key: SERVER_SECRET
+        generateValue: true
       - key: HOLD_TTL_SECONDS
         value: 90
       - key: AVAILABILITY_CACHE_TTL_SECONDS

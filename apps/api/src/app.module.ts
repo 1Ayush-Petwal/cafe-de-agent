@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { CafesModule } from './cafes/cafes.module';
 import { buildTypeOrmConfig } from './config/typeorm.config';
 import { GeoModule } from './geo/geo.module';
+import { MandatesModule } from './mandates/mandates.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OwnerModule } from './owner/owner.module';
 import { PartnerModule } from './partner/partner.module';
@@ -23,6 +24,7 @@ import { ReservationsModule } from './reservations/reservations.module';
     CafesModule,
     GeoModule,
     ReservationsModule,
+    MandatesModule,
     NotificationsModule,
     OwnerModule,
     PartnerModule,
