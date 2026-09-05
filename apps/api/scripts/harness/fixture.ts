@@ -89,7 +89,7 @@ export async function buildHarnessFixture(app: INestApplication, seed: number, n
         ),
       ),
     );
-    const historicalReservations = [];
+    const historicalReservations: Reservation[] = [];
     for (const slot of pastSlots) {
       const weight = historicalFillWeight(slot.slotTime);
       for (const table of tables) {
