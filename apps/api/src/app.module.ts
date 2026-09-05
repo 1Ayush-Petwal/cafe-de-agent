@@ -10,6 +10,7 @@ import { MandatesModule } from './mandates/mandates.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OwnerModule } from './owner/owner.module';
 import { PartnerModule } from './partner/partner.module';
+import { PaymentsModule } from './payments/payments.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { RedisModule } from './redis/redis.module';
 import { ReservationsModule } from './reservations/reservations.module';
@@ -28,6 +29,7 @@ import { ReservationsModule } from './reservations/reservations.module';
     NotificationsModule,
     OwnerModule,
     PartnerModule,
+    PaymentsModule,
     AgentModule,
   ],
 })

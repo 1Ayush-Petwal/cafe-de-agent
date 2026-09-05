@@ -9,7 +9,9 @@ import { Slot } from '../../src/entities/slot.entity';
 
 export async function createTestApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication();
+  // rawBody: true (issue #8): the Razorpay webhook e2e spec needs `req.rawBody`
+  // to verify signatures the same way the real app does.
+  const app = moduleRef.createNestApplication({ rawBody: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   await app.init();
   // Listen explicitly (rather than relying on supertest's implicit per-request
