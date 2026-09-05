@@ -9,6 +9,12 @@ export interface RazorpayOrder {
   notes: Record<string, string>;
 }
 
+/** A single refund the in-memory stub recorded, for test introspection. */
+export interface RazorpayRefund {
+  paymentId: string;
+  amountMinor: number;
+}
+
 /**
  * Wraps Razorpay's `orders.create` / `payments.refund` behind one injectable
  * class — the established mock-gateway pattern (`NominatimClient`,
@@ -25,7 +31,7 @@ export class RazorpayClient {
   private readonly keySecret = process.env.RAZORPAY_KEY_SECRET;
   private readonly live = Boolean(this.keyId && this.keySecret);
   private readonly stubOrders = new Map<string, RazorpayOrder>();
-  private readonly stubRefundLog: { paymentId: string; amountMinor: number }[] = [];
+  private readonly stubRefundLog: RazorpayRefund[] = [];
 
   /** Test-only introspection: how many orders this stub has created. */
   get stubOrderCount(): number {
@@ -33,7 +39,7 @@ export class RazorpayClient {
   }
 
   /** Test-only introspection: every refund this stub has issued, in order. */
-  get stubRefunds(): readonly { paymentId: string; amountMinor: number }[] {
+  get stubRefunds(): readonly RazorpayRefund[] {
     return this.stubRefundLog;
   }
 
