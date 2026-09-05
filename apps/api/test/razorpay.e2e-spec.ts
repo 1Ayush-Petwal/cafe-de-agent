@@ -88,7 +88,9 @@ describe('Razorpay payments (e2e)', () => {
   });
 
   afterAll(async () => {
-    delete process.env.PAYMENT_PROVIDER;
+    // Restored, not deleted: a deleted key is refilled from apps/api/.env by
+    // the next spec's ConfigModule boot (see test/env.setup.ts).
+    process.env.PAYMENT_PROVIDER = 'wallet';
     await app.close();
   });
 

@@ -21,6 +21,15 @@ process.env.RAZORPAY_WEBHOOK_SECRET = 'test-webhook-secret';
 // leaves it alone, and it is falsy, so the client stays in stub mode.
 process.env.RAZORPAY_KEY_ID = '';
 process.env.RAZORPAY_KEY_SECRET = '';
+// Same dotenv trap as the two keys above, and the one that actually bit:
+// apps/api/.env carries PAYMENT_PROVIDER=razorpay for the webhook demo, so on
+// a developer machine ConfigModule filled this in and writeBookingAndCharge
+// skipped chargeWallet for the entire suite - every wallet assertion saw an
+// untouched balance and every insufficient-balance case returned 201 instead
+// of 402. Set to the default explicitly so the key is present and dotenv
+// leaves it alone. Suites that need the other provider flip it per-test and
+// must restore it to this value, not delete it.
+process.env.PAYMENT_PROVIDER = 'wallet';
 // The IP bucket (RateLimitGuard) is a single Redis key shared by every spec
 // file's requests for the whole `test:ci` run, since they all originate from
 // the same loopback address — a fixed real-world default (100, refill 20/s)
