@@ -1,5 +1,13 @@
 :root {
   font-family: system-ui, -apple-system, sans-serif;
+
+  /* Geometry and motion. Colours stay in the theme blocks below - these are
+     the shape and timing the whole app shares, so a card, an input and a
+     button round the same amount instead of 8px/4px/6px as they used to. */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-pill: 999px;
+  --ease: 140ms ease;
 }
 
 /* Day theme (06:00-17:00 local, or sun/moon override): warm cream/gold,
@@ -29,6 +37,8 @@
   --success-text: #1e6b1e;
   --danger-bg: #f3e3e3;
   --danger-text: #6b1e1e;
+  --shadow: 0 1px 2px rgba(42, 28, 16, 0.05), 0 2px 8px rgba(42, 28, 16, 0.05);
+  --shadow-lifted: 0 2px 4px rgba(42, 28, 16, 0.07), 0 8px 20px rgba(42, 28, 16, 0.09);
 }
 
 /* Dinner theme (otherwise, or sun/moon override): dark brown/amber,
@@ -56,12 +66,65 @@
   --success-text: #8fd88a;
   --danger-bg: #3d2020;
   --danger-text: #e28a8a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-lifted: 0 2px 4px rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.35);
 }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Headings were browser defaults, so an h1 landed at 2em/bold and every page
+   opened with a shout. This is the one scale the app uses. */
+h1 {
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.35rem;
+}
+
+h2 {
+  font-size: 1.1rem;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  margin: 2rem 0 0.75rem;
+}
+
+h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+}
+
+p {
+  margin: 0 0 0.75rem;
+}
+
+/* Anything counting down, priced or totalled: fixed-width digits so the
+   hold timer and wallet stop shifting the layout every tick. */
+.wallet-balance,
+.hold-banner strong,
+.pill,
+.price {
+  font-variant-numeric: tabular-nums;
+}
+
+/* There was no focus style at all - tabbing through the app showed nothing.
+   :focus-visible keeps it off mouse clicks. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
 }
 
 .app {
@@ -74,63 +137,136 @@ nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 0;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 0;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 1100;
+  background: var(--bg);
 }
 
 nav a {
-  color: var(--text);
+  color: var(--text-muted);
   text-decoration: none;
-  font-weight: 600;
+  font-weight: 550;
+  font-size: 0.9rem;
+  padding: 0.35rem 0;
+  transition: color var(--ease);
+}
+
+nav a:hover {
+  color: var(--text);
+}
+
+/* NavLink stamps `active` on the route you are on - without it every link
+   looked identical and the nav never told you where you were. */
+nav a.active {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.nav-brand {
+  font-size: 1rem;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.nav-brand:hover,
+.nav-brand.active {
+  color: var(--text);
+  box-shadow: none;
 }
 
 .nav-links {
   display: flex;
   gap: 1rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .theme-toggle {
-  padding: 0.35rem 0.6rem;
+  padding: 0.3rem 0.5rem;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
-  font-size: 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
   line-height: 1;
 }
 
 .user-email {
-  color: var(--text-muted);
+  color: var(--text-faint);
   font-weight: 400;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
 }
 
+/* Reads as a balance rather than another nav label - it is the number the
+   demo watches move when a booking is confirmed. */
 .wallet-balance {
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel);
+  border: 1px solid var(--panel-border);
   color: var(--text);
-  font-weight: 600;
-  font-size: 0.9rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.auth-page {
+  max-width: 340px;
+  margin: 3rem auto 0;
 }
 
 .auth-page form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-width: 320px;
+  margin-top: 1.25rem;
 }
 
-.auth-page label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+.auth-page p:last-child {
+  margin-top: 1.25rem;
   font-size: 0.9rem;
+  color: var(--text-muted);
 }
 
-.auth-page input {
-  padding: 0.5rem;
+.auth-page a {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* Every text control in the app. .auth-page, .form-stacked and .locator-search
+   each carried their own padding and radius before, so the same input looked
+   different on three pages. */
+input,
+select,
+textarea {
+  padding: 0.55rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+  box-sizing: border-box;
+  transition:
+    border-color var(--ease),
+    box-shadow var(--ease);
+}
+
+input:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: var(--panel-border);
+}
+
+input:disabled,
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+::placeholder {
+  color: var(--text-faint);
 }
 
 button {
@@ -139,12 +275,31 @@ button {
   border: 1px solid var(--primary);
   background: var(--primary);
   color: var(--primary-contrast);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition:
+    filter var(--ease),
+    box-shadow var(--ease),
+    transform var(--ease);
+}
+
+/* brightness rather than a second colour: the hover response follows whatever
+   --primary the active theme sets, so day and dinner both stay on-palette. */
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: var(--shadow);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
 button:disabled {
-  opacity: 0.6;
-  cursor: default;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .error {
@@ -155,7 +310,7 @@ button:disabled {
   padding: 0.5rem 0.75rem;
   background: var(--bg-panel);
   border: 1px solid var(--panel-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text);
 }
 
@@ -166,11 +321,15 @@ button:disabled {
   gap: 1rem;
 }
 
-.cafe-list li a {
+/* Only the plain list renders its row as a card. The locator list reuses
+   .cafe-list for layout but draws the card on the <li> itself (.locator-card),
+   so without the :not() the café name and the Directions link each picked up
+   a bordered, padded card of their own inside it. */
+.cafe-list li:not(.locator-card) > a {
   display: block;
   padding: 1rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg-elevated);
   color: var(--text);
 }
@@ -193,7 +352,7 @@ button:disabled {
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   color: var(--text-muted);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.4rem 1rem;
   font-size: 0.85rem;
 }
@@ -218,7 +377,7 @@ button:disabled {
   gap: 0.4rem;
   padding: 1rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg-elevated);
   color: var(--text);
   text-align: left;
@@ -240,7 +399,7 @@ button:disabled {
 
 .reserved-badge {
   padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.72rem;
   text-transform: uppercase;
   background: var(--danger-bg);
@@ -262,7 +421,7 @@ button:disabled {
   margin-bottom: 1rem;
   border: 1px solid var(--panel-border);
   background: var(--bg-panel);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--text);
 }
 
@@ -276,7 +435,7 @@ button:disabled {
 .reservation-list li {
   padding: 1rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg-elevated);
   color: var(--text);
   display: flex;
@@ -290,7 +449,7 @@ button:disabled {
 
 .status {
   padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.75rem;
   text-transform: uppercase;
 }
@@ -308,13 +467,7 @@ button:disabled {
 /* Store locator home page (issue #18) */
 .locator-search {
   width: 100%;
-  padding: 0.6rem 0.75rem;
-  margin: 0.5rem 0 1rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-elevated);
-  color: var(--text);
-  box-sizing: border-box;
+  margin: 0.75rem 0 1rem;
 }
 
 .locator-layout {
@@ -332,7 +485,7 @@ button:disabled {
 .locator-card {
   padding: 0.85rem 1rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg-elevated);
   color: var(--text);
   display: grid;
@@ -343,6 +496,25 @@ button:disabled {
 .locator-card.selected {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px var(--primary-shadow);
+}
+
+/* Scoped to the head so it does not swallow .directions-link's own colour. */
+.locator-card-head a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.locator-card-head a:hover strong {
+  color: var(--primary);
+}
+
+.directions-link {
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.directions-link:hover {
+  text-decoration: underline;
 }
 
 .locator-card-head {
@@ -386,7 +558,7 @@ button:disabled {
   color: var(--chip-text);
   font-size: 0.72rem;
   padding: 0.1rem 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .directions-link {
@@ -397,7 +569,7 @@ button:disabled {
 
 .locator-map {
   height: 70vh;
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--border);
 }
@@ -415,7 +587,7 @@ button:disabled {
   color: var(--accent-soft-text);
   font-size: 0.85rem;
   padding: 0.35rem 0.6rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   margin-bottom: 0.75rem;
 }
 
@@ -437,7 +609,7 @@ button:disabled {
 .sort-toggle {
   display: inline-flex;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   margin-bottom: 0.75rem;
 }
@@ -471,11 +643,13 @@ button:disabled {
 }
 
 .offline-banner {
-  background: #6b1e1e;
-  color: white;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border-bottom: 1px solid var(--danger-text);
   text-align: center;
   padding: 0.5rem 1rem;
   font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .locator-search-as-locality {
@@ -484,21 +658,23 @@ button:disabled {
   cursor: pointer;
   font-size: 0.85rem;
   border: 1px dashed var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg-elevated);
 }
 
 /* ─── Form layouts for /agent, /mandate, /owner ─── */
 
 /* Shared stacked-form layout: each label-input pair on its own line */
-.form-stacked {
+.form-stacked,
+.auth-page form {
   display: flex;
   flex-direction: column;
   gap: 1rem;
   max-width: 480px;
 }
 
-.form-stacked label {
+.form-stacked label,
+.auth-page label {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
@@ -509,18 +685,13 @@ button:disabled {
 
 .form-stacked input,
 .form-stacked select,
-.form-stacked textarea {
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-elevated);
-  color: var(--text);
-  font-size: 0.95rem;
+.form-stacked textarea,
+.auth-page input {
   width: 100%;
-  box-sizing: border-box;
 }
 
-.form-stacked button[type="submit"] {
+.form-stacked button[type="submit"],
+.auth-page button[type="submit"] {
   align-self: flex-start;
   margin-top: 0.25rem;
 }
@@ -541,7 +712,7 @@ button:disabled {
 .mandate-status {
   padding: 1.25rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg-elevated);
   display: flex;
   flex-direction: column;
@@ -554,6 +725,247 @@ button:disabled {
   padding: 0.5rem 0.75rem;
   background: var(--bg-panel);
   border: 1px solid var(--panel-border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 0.9rem;
+}
+
+/* ─── Interaction states ───────────────────────────────────────────────────
+   Nothing in the app responded to a pointer before this: cards, pills and
+   list rows all sat inert. Each hover below only moves border, shadow or
+   translate, so the palette is untouched in both themes. */
+
+.cafe-list li:not(.locator-card) > a,
+.locator-card,
+.table-card:not(:disabled),
+.pill:not(:disabled),
+.locator-search-as-locality {
+  transition:
+    border-color var(--ease),
+    box-shadow var(--ease),
+    transform var(--ease),
+    background var(--ease);
+}
+
+.cafe-list li:not(.locator-card) > a:hover,
+.locator-card:hover,
+.locator-search-as-locality:hover {
+  border-color: var(--panel-border);
+  box-shadow: var(--shadow-lifted);
+}
+
+.table-card:not(:disabled):hover,
+.pill:not(:disabled):hover {
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.table-card:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.table-card:disabled {
+  cursor: not-allowed;
+}
+
+/* The pill row is a tablist, so the selected pill should not also grow a
+   hover border - it already reads as chosen. */
+.pill-selected:hover {
+  border-color: var(--primary);
+  color: var(--primary-contrast);
+}
+
+.cafe-list li:not(.locator-card) > a,
+.table-card,
+.reservation-list li,
+.locator-card,
+.mandate-status,
+.agent-conversation {
+  box-shadow: var(--shadow);
+}
+
+/* ─── Booking flow emphasis ─────────────────────────────────────────────── */
+
+/* The hold banner is the one timed element in the demo - give the countdown
+   the weight it needs to be read across a room. */
+.hold-banner {
+  box-shadow: var(--shadow-lifted);
+}
+
+.hold-banner strong {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.reserve-cta {
+  margin-top: 0.5rem;
+  font-weight: 650;
+  box-shadow: var(--shadow);
+}
+
+.table-card.selected {
+  box-shadow: 0 0 0 2px var(--primary-shadow), var(--shadow);
+}
+
+.locator-card.selected {
+  box-shadow: 0 0 0 2px var(--primary-shadow), var(--shadow-lifted);
+}
+
+/* The row is `<strong>cafe</strong> - table - time [status] [Cancel]` in one
+   flex line; without this the pill and button crowd the text instead of
+   settling on the right edge. */
+.reservation-list li .status {
+  margin-left: auto;
+}
+
+.status,
+.reserved-badge {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.status {
+  align-self: center;
+}
+
+/* ─── Agent chat ───────────────────────────────────────────────────────────
+   These six classes were in the JSX with no rules behind them, so the whole
+   transcript rendered as a stack of bare paragraphs. */
+
+.agent-chat > p {
+  color: var(--text-muted);
+  margin-bottom: 1.25rem;
+}
+
+.agent-conversation {
+  margin-top: 1.75rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.agent-conversation > p {
+  margin: 0;
+  max-width: 85%;
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--radius);
+  font-size: 0.92rem;
+}
+
+/* What the user asked for, right-aligned like the sent side of a thread. */
+.agent-you {
+  align-self: flex-end;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  border-bottom-right-radius: 3px;
+  font-weight: 500;
+}
+
+/* One line per model turn or tool result. */
+.agent-turn {
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 3px;
+  color: var(--text);
+}
+
+.mandate-chip {
+  align-self: stretch;
+  max-width: 100% !important;
+  background: var(--bg-panel);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one moment the agent stops and asks for money. It should not look like
+   another transcript line. */
+.agent-approval {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 0.4rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--panel-border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.agent-approval p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.agent-answer {
+  align-self: stretch;
+  max-width: 100%;
+  margin-top: 0.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.agent-done {
+  align-self: stretch;
+  max-width: 100% !important;
+  background: var(--success-bg);
+  color: var(--success-text);
+  font-weight: 650;
+}
+
+.agent-conversation .error {
+  align-self: stretch;
+  margin: 0;
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+/* ─── Mandate ─────────────────────────────────────────────────────────────── */
+
+.mandate-status p {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mandate-status strong {
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.mandate-status button {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+}
+
+/* ─── Small screens ───────────────────────────────────────────────────────── */
+
+@media (max-width: 720px) {
+  .locator-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .locator-map {
+    height: 45vh;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .reservation-list li {
+    flex-wrap: wrap;
+  }
 }

@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, Link } from 'react-router-dom';
+import { Navigate, NavLink, Route, Routes, Link } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
 import { formatRupees } from './money';
 import { OfflineBanner } from './OfflineBanner';
@@ -30,19 +30,20 @@ export function App() {
     <div className="app">
       <OfflineBanner />
       <nav>
-        <Link to="/cafes">Café De App</Link>
+        <Link to="/cafes" className="nav-brand">
+          Café De
+        </Link>
         <div className="nav-links">
-          <ThemeToggle />
-          <Link to="/cafes">Cafés</Link>
+          <NavLink to="/cafes">Cafés</NavLink>
           {isAuthenticated ? (
             <>
               {user?.role === 'owner' ? (
-                <Link to="/owner">Owner dashboard</Link>
+                <NavLink to="/owner">Owner dashboard</NavLink>
               ) : (
                 <>
-                  <Link to="/reservations">My reservations</Link>
-                  <Link to="/agent">Booking agent</Link>
-                  <Link to="/mandate">Agent mandate</Link>
+                  <NavLink to="/reservations">My reservations</NavLink>
+                  <NavLink to="/agent">Booking agent</NavLink>
+                  <NavLink to="/mandate">Agent mandate</NavLink>
                 </>
               )}
               <span className="user-email">{user?.email}</span>
@@ -51,10 +52,11 @@ export function App() {
             </>
           ) : (
             <>
-              <Link to="/login">Log in</Link>
-              <Link to="/signup">Sign up</Link>
+              <NavLink to="/login">Log in</NavLink>
+              <NavLink to="/signup">Sign up</NavLink>
             </>
           )}
+          <ThemeToggle />
         </div>
       </nav>
       <main>
