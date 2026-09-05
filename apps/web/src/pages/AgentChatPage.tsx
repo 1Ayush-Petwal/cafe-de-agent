@@ -110,19 +110,25 @@ export function AgentChatPage() {
       <h1>Booking agent</h1>
       <p>Tell the agent what you want — e.g. &ldquo;book a table for 2 tonight&rdquo;.</p>
 
-      <form onSubmit={handleSubmit}>
-        <input
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Book a table for 2 tonight"
-          disabled={sending}
-        />
-        <input
-          value={mandateId}
-          onChange={(e) => setMandateId(e.target.value)}
-          placeholder="Mandate id (optional)"
-          disabled={sending}
-        />
+      <form onSubmit={handleSubmit} className="form-stacked">
+        <label>
+          What would you like to book?
+          <input
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Book a table for 2 tonight"
+            disabled={sending}
+          />
+        </label>
+        <label>
+          Mandate ID (optional)
+          <input
+            value={mandateId}
+            onChange={(e) => setMandateId(e.target.value)}
+            placeholder="Paste a mandate ID to bind the agent"
+            disabled={sending}
+          />
+        </label>
         <button type="submit" disabled={sending || !message.trim()}>
           {sending ? '…' : 'Send'}
         </button>
@@ -160,7 +166,7 @@ export function AgentChatPage() {
           )}
 
           {workflow.status === 'awaiting_input' && workflow.pendingAction && (
-            <form className="agent-answer" onSubmit={handleAnswer}>
+            <form className="agent-answer form-stacked" onSubmit={handleAnswer}>
               <p>{(workflow.pendingAction.args.question as string) ?? 'The agent needs more information.'}</p>
               <input
                 value={answerText}

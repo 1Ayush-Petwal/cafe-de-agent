@@ -262,7 +262,7 @@ export function OwnerDashboardPage() {
       {error && <p className="error">{error}</p>}
 
       <h2>Create a café</h2>
-      <form onSubmit={handleCreateCafe}>
+      <form onSubmit={handleCreateCafe} className="form-stacked">
         <label>
           Name
           <input required value={cafeName} onChange={(e) => setCafeName(e.target.value)} />
@@ -277,21 +277,23 @@ export function OwnerDashboardPage() {
       {cafes.length > 0 && (
         <>
           <h2>Your cafés</h2>
-          <label>
-            Café
-            <select value={selectedCafeId ?? ''} onChange={(e) => setSelectedCafeId(e.target.value)}>
-              {cafes.map((cafe) => (
-                <option key={cafe.id} value={cafe.id}>
-                  {cafe.name} ({cafe.area})
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="form-stacked">
+            <label>
+              Café
+              <select value={selectedCafeId ?? ''} onChange={(e) => setSelectedCafeId(e.target.value)}>
+                {cafes.map((cafe) => (
+                  <option key={cafe.id} value={cafe.id}>
+                    {cafe.name} ({cafe.area})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
 
           {selectedCafeId && (
             <>
               <h2>Cuisines</h2>
-              <form onSubmit={handleSaveCuisines}>
+              <form onSubmit={handleSaveCuisines} className="form-stacked">
                 <label>
                   Cuisines (comma-separated)
                   <input
@@ -318,7 +320,7 @@ export function OwnerDashboardPage() {
                   </li>
                 ))}
               </ul>
-              <form onSubmit={handleCreateTable}>
+              <form onSubmit={handleCreateTable} className="form-stacked">
                 <label>
                   Label
                   <input required value={tableLabel} onChange={(e) => setTableLabel(e.target.value)} />
@@ -337,46 +339,50 @@ export function OwnerDashboardPage() {
               </form>
 
               <h2>Daily slot grid</h2>
-              <form onSubmit={handleGenerateSlots}>
-                <label>
-                  Start date
-                  <input
-                    type="date"
-                    value={gridStartDate}
-                    onChange={(e) => setGridStartDate(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Days ahead
-                  <input
-                    type="number"
-                    min={DAYS_AHEAD_MIN}
-                    max={DAYS_AHEAD_MAX}
-                    value={gridDays}
-                    onChange={handleDaysAheadChange}
-                    onBlur={handleDaysAheadBlur}
-                  />
-                </label>
-                <label>
-                  Opening hour (UTC)
-                  <input
-                    type="number"
-                    min={0}
-                    max={23}
-                    value={gridOpenHour}
-                    onChange={(e) => setGridOpenHour(Number(e.target.value))}
-                  />
-                </label>
-                <label>
-                  Closing hour (UTC)
-                  <input
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={gridCloseHour}
-                    onChange={(e) => setGridCloseHour(Number(e.target.value))}
-                  />
-                </label>
+              <form onSubmit={handleGenerateSlots} className="form-stacked">
+                <div className="form-row">
+                  <label>
+                    Start date
+                    <input
+                      type="date"
+                      value={gridStartDate}
+                      onChange={(e) => setGridStartDate(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Days ahead
+                    <input
+                      type="number"
+                      min={DAYS_AHEAD_MIN}
+                      max={DAYS_AHEAD_MAX}
+                      value={gridDays}
+                      onChange={handleDaysAheadChange}
+                      onBlur={handleDaysAheadBlur}
+                    />
+                  </label>
+                </div>
+                <div className="form-row">
+                  <label>
+                    Opening hour (UTC)
+                    <input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={gridOpenHour}
+                      onChange={(e) => setGridOpenHour(Number(e.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Closing hour (UTC)
+                    <input
+                      type="number"
+                      min={1}
+                      max={24}
+                      value={gridCloseHour}
+                      onChange={(e) => setGridCloseHour(Number(e.target.value))}
+                    />
+                  </label>
+                </div>
                 <label>
                   Turn time (minutes)
                   <input
@@ -391,14 +397,16 @@ export function OwnerDashboardPage() {
               {gridMessage && <p>{gridMessage}</p>}
 
               <h2>Bookings</h2>
-              <label>
-                Date
-                <input
-                  type="date"
-                  value={bookingsDate}
-                  onChange={(e) => handleBookingsDateChange(e.target.value)}
-                />
-              </label>
+              <div className="form-stacked">
+                <label>
+                  Date
+                  <input
+                    type="date"
+                    value={bookingsDate}
+                    onChange={(e) => handleBookingsDateChange(e.target.value)}
+                  />
+                </label>
+              </div>
               {bookings.length === 0 ? (
                 <p>No bookings for this day.</p>
               ) : (
@@ -441,7 +449,7 @@ export function OwnerDashboardPage() {
               <button onClick={handleGenerateApiKey}>Generate new key</button>
 
               <h3>Webhook endpoint</h3>
-              <form onSubmit={handleRegisterWebhook}>
+              <form onSubmit={handleRegisterWebhook} className="form-stacked">
                 <label>
                   Your local app's URL
                   <input

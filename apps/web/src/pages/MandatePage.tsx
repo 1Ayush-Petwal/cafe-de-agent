@@ -70,7 +70,7 @@ export function MandatePage() {
       {error && <p className="error">{error}</p>}
 
       {!mandate || mandate.status === 'revoked' ? (
-        <form onSubmit={handleGrant} className="mandate-form">
+        <form onSubmit={handleGrant} className="mandate-form form-stacked">
           <label>
             Max per booking (₹)
             <input
@@ -110,24 +110,26 @@ export function MandatePage() {
               required
             />
           </label>
-          <label>
-            Valid from
-            <input
-              type="datetime-local"
-              value={windowStart}
-              onChange={(e) => setWindowStart(e.target.value)}
-              required
-            />
-          </label>
-          <label>
-            Valid until
-            <input
-              type="datetime-local"
-              value={windowEnd}
-              onChange={(e) => setWindowEnd(e.target.value)}
-              required
-            />
-          </label>
+          <div className="form-row">
+            <label>
+              Valid from
+              <input
+                type="datetime-local"
+                value={windowStart}
+                onChange={(e) => setWindowStart(e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Valid until
+              <input
+                type="datetime-local"
+                value={windowEnd}
+                onChange={(e) => setWindowEnd(e.target.value)}
+                required
+              />
+            </label>
+          </div>
           <button type="submit" disabled={busy}>
             Grant mandate
           </button>
