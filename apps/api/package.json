@@ -13,7 +13,8 @@
     "test": "docker compose -f ../../docker-compose.yml up -d postgres redis && node scripts/wait-for-postgres.js && node scripts/wait-for-redis.js && jest --config test/jest-e2e.json --runInBand",
     "test:ci": "jest --config test/jest-e2e.json --runInBand",
     "seed": "ts-node -r tsconfig-paths/register src/seed/seed.ts",
-    "benchmark:locking": "docker compose -f ../../docker-compose.yml up -d postgres redis && node scripts/wait-for-postgres.js && node scripts/wait-for-redis.js && ts-node -r tsconfig-paths/register scripts/benchmark-locking.ts"
+    "benchmark:locking": "docker compose -f ../../docker-compose.yml up -d postgres redis && node scripts/wait-for-postgres.js && node scripts/wait-for-redis.js && ts-node -r tsconfig-paths/register scripts/benchmark-locking.ts",
+    "harness": "docker compose -f ../../docker-compose.yml up -d postgres redis && node scripts/wait-for-postgres.js && node scripts/wait-for-redis.js && ts-node -r tsconfig-paths/register scripts/eval-harness.ts"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",
