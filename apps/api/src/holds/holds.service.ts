@@ -10,6 +10,13 @@ export interface Hold {
   expiresAt: Date;
 }
 
+/** The (tableId, slotId) pair a holdId resolves back to, plus its owner. */
+export interface HoldMeta {
+  tableId: string;
+  slotId: string;
+  userId: string;
+}
+
 /**
  * Compare-and-delete: only removes the key if it still holds the token we
  * think we own. Closes the last-second race (Roadmap M2) where a hold
@@ -68,6 +75,10 @@ export class HoldsService {
     return `holdmeta:${holdId}`;
   }
 
+  private writeMeta(holdId: string, meta: HoldMeta, ttlSeconds: number): Promise<'OK'> {
+    return this.redis.set(this.metaKey(holdId), JSON.stringify(meta), 'EX', ttlSeconds);
+  }
+
   /**
    * Atomically acquires the hold, reuses this same user's already-held slot
    * (retry-safe), or reports it's held by someone else.
@@ -93,7 +104,7 @@ export class HoldsService {
     }
     if (status === 'reused') {
       const ttl = Number(existingTtl);
-      await this.redis.set(this.metaKey(existingHoldId!), JSON.stringify({ tableId, slotId, userId }), 'EX', ttl);
+      await this.writeMeta(existingHoldId!, { tableId, slotId, userId }, ttl);
       return {
         holdId: existingHoldId!,
         tableId,
@@ -101,7 +112,7 @@ export class HoldsService {
         expiresAt: new Date(Date.now() + ttl * 1000),
       };
     }
-    await this.redis.set(this.metaKey(holdId), JSON.stringify({ tableId, slotId, userId }), 'EX', ttlSeconds);
+    await this.writeMeta(holdId, { tableId, slotId, userId }, ttlSeconds);
     return { holdId, tableId, slotId, expiresAt: new Date(Date.now() + ttlSeconds * 1000) };
   }
 
@@ -126,9 +137,9 @@ export class HoldsService {
    * pair afterwards, so this key is untouched by `consume()` and lives for
    * its own TTL (matching `HOLD_TTL_SECONDS`) independent of hold state.
    */
-  async resolveHold(holdId: string): Promise<{ tableId: string; slotId: string; userId: string } | null> {
+  async resolveHold(holdId: string): Promise<HoldMeta | null> {
     const raw = await this.redis.get(this.metaKey(holdId));
-    return raw ? (JSON.parse(raw) as { tableId: string; slotId: string; userId: string }) : null;
+    return raw ? (JSON.parse(raw) as HoldMeta) : null;
   }
 
   /** Which of the given (tableId, slotId) pairs are currently held by anyone. */

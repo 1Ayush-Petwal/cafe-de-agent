@@ -31,6 +31,13 @@ export class RazorpayClient {
     return this.stubOrders.size;
   }
 
+  private liveHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}`,
+    };
+  }
+
   async createOrder(amountMinor: number, receipt: string, notes: Record<string, string>): Promise<RazorpayOrder> {
     if (this.live) {
       return this.createOrderLive(amountMinor, receipt, notes);
@@ -47,10 +54,7 @@ export class RazorpayClient {
   ): Promise<RazorpayOrder> {
     const res = await fetch('https://api.razorpay.com/v1/orders', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}`,
-      },
+      headers: this.liveHeaders(),
       body: JSON.stringify({ amount: amountMinor, currency: 'INR', receipt, notes }),
     });
     if (!res.ok) {
@@ -66,10 +70,7 @@ export class RazorpayClient {
     }
     const res = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/refund`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}`,
-      },
+      headers: this.liveHeaders(),
       body: JSON.stringify({ amount: amountMinor }),
     });
     if (!res.ok) {
