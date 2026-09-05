@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { paymentProvider } from '../config/payment-provider';
 import { DecisionLogService } from '../decisions/decision-log.service';
 import { AgentDecisionStep } from '../entities/agent-decision-step.enum';
 import { CafeTable } from '../entities/cafe-table.entity';
@@ -34,7 +35,8 @@ import { CreateReservationDto } from './dto/create-reservation.dto';
 const TAKEN_MESSAGE = 'This table is already booked for that slot';
 const UNIQUE_VIOLATION = '23505';
 const OPTIMISTIC_MAX_ATTEMPTS = 10;
-const DEFAULT_HOLD_TTL_SECONDS = 90;
+/** Issue #8 (PRD area E): raised from 90 so a hold survives intent creation, checkout and webhook delivery. */
+const DEFAULT_HOLD_TTL_SECONDS = 300;
 /** Issue #17 (PRD area B): one active reservation per user per café within any rolling 10-hour window. */
 const BOOKING_WINDOW_MS = 10 * 60 * 60 * 1000;
 
@@ -174,6 +176,12 @@ export class ReservationsService {
    * `booked` also enqueues the partner `booking.created` webhook here, so
    * direct book can't become a free side door around partner sync the way
    * it once was around the wallet charge.
+   *
+   * Issue #8 (PRD area E): the provider switch lives here too. In 'razorpay'
+   * mode the money has already been captured at Razorpay before this ever
+   * runs — a webhook only reaches `executeConfirm` after capture, and direct
+   * book has no Razorpay flow at all — so `chargeWallet` is skipped entirely
+   * rather than run alongside it; the two never both charge.
    */
   private async writeBookingAndCharge(
     manager: EntityManager,
@@ -181,7 +189,9 @@ export class ReservationsService {
     dto: { tableId: string; slotId: string },
   ): Promise<Reservation> {
     const slot = await manager.findOneOrFail(Slot, { where: { id: dto.slotId } });
-    await this.chargeWallet(manager, userId, slot.priceMinor);
+    if (paymentProvider() === 'wallet') {
+      await this.chargeWallet(manager, userId, slot.priceMinor);
+    }
     const saved = await manager.save(
       Reservation,
       manager.create(Reservation, {

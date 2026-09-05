@@ -25,7 +25,9 @@ services:
       - key: SERVER_SECRET
         generateValue: true
       - key: HOLD_TTL_SECONDS
-        value: 90
+        value: 300
+      - key: PAYMENT_PROVIDER
+        value: wallet
       - key: AVAILABILITY_CACHE_TTL_SECONDS
         value: 5
       - key: RATE_LIMIT_IP_CAPACITY
@@ -42,4 +44,10 @@ services:
       - key: REDIS_URL
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
         sync: false

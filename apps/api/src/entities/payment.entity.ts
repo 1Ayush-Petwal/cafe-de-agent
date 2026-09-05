@@ -23,6 +23,17 @@ export class Payment {
   @Column({ type: 'int' })
   amount!: number;
 
+  /**
+   * Issue #8 (PRD area E): written by the Razorpay webhook on a captured
+   * payment. Nullable — a wallet-charged booking has none. Unique so two
+   * reservations can never claim the same Razorpay payment; not itself the
+   * correctness mechanism for "redelivery books once" (the existing
+   * `IdempotencyKey` machinery is), it is an audit link the decision log
+   * would reference.
+   */
+  @Column({ type: 'text', nullable: true, unique: true })
+  razorpayPaymentId!: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 }

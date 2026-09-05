@@ -47,7 +47,12 @@ function startWorkers(app: NestExpressApplication): void {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody: true (issue #8, PRD area E) preserves the exact request bytes on
+  // `req.rawBody` for every route, alongside the normal parsed `req.body` —
+  // the Razorpay webhook signature must be verified against those bytes,
+  // never a re-serialized `JSON.stringify(req.body)`, without disturbing any
+  // other JSON route.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   app.setGlobalPrefix('api');
   app.enableCors();
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

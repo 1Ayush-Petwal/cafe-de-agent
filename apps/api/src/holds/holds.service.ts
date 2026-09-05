@@ -10,6 +10,13 @@ export interface Hold {
   expiresAt: Date;
 }
 
+/** The (tableId, slotId) pair a holdId resolves back to, plus its owner. */
+export interface HoldMeta {
+  tableId: string;
+  slotId: string;
+  userId: string;
+}
+
 /**
  * Compare-and-delete: only removes the key if it still holds the token we
  * think we own. Closes the last-second race (Roadmap M2) where a hold
@@ -64,6 +71,14 @@ export class HoldsService {
     return `${holdId}:${userId}`;
   }
 
+  private metaKey(holdId: string): string {
+    return `holdmeta:${holdId}`;
+  }
+
+  private writeMeta(holdId: string, meta: HoldMeta, ttlSeconds: number): Promise<'OK'> {
+    return this.redis.set(this.metaKey(holdId), JSON.stringify(meta), 'EX', ttlSeconds);
+  }
+
   /**
    * Atomically acquires the hold, reuses this same user's already-held slot
    * (retry-safe), or reports it's held by someone else.
@@ -88,13 +103,16 @@ export class HoldsService {
       return null;
     }
     if (status === 'reused') {
+      const ttl = Number(existingTtl);
+      await this.writeMeta(existingHoldId!, { tableId, slotId, userId }, ttl);
       return {
         holdId: existingHoldId!,
         tableId,
         slotId,
-        expiresAt: new Date(Date.now() + Number(existingTtl) * 1000),
+        expiresAt: new Date(Date.now() + ttl * 1000),
       };
     }
+    await this.writeMeta(holdId, { tableId, slotId, userId }, ttlSeconds);
     return { holdId, tableId, slotId, expiresAt: new Date(Date.now() + ttlSeconds * 1000) };
   }
 
@@ -107,6 +125,21 @@ export class HoldsService {
       this.token(holdId, userId),
     );
     return result === 1;
+  }
+
+  /**
+   * Issue #8 (PRD area E): reverse lookup by holdId alone. The Razorpay
+   * webhook's notes carry only mandateId/agentId/userId/holdId/idempotencyKey
+   * — no tableId/slotId, so this is how it resolves the (tableId, slotId)
+   * pair `confirmHold` needs. Deliberately a separate key from `hold:{table}:
+   * {slot}` rather than reusing it: `consume()` deletes that key on the first
+   * successful confirm, but a redelivered webhook must still resolve the same
+   * pair afterwards, so this key is untouched by `consume()` and lives for
+   * its own TTL (matching `HOLD_TTL_SECONDS`) independent of hold state.
+   */
+  async resolveHold(holdId: string): Promise<HoldMeta | null> {
+    const raw = await this.redis.get(this.metaKey(holdId));
+    return raw ? (JSON.parse(raw) as HoldMeta) : null;
   }
 
   /** Which of the given (tableId, slotId) pairs are currently held by anyone. */

@@ -1,0 +1,269 @@
+import { createHmac } from 'crypto';
+import { INestApplication } from '@nestjs/common';
+import request from 'supertest';
+import { DataSource } from 'typeorm';
+import { Payment } from '../src/entities/payment.entity';
+import { Reservation } from '../src/entities/reservation.entity';
+import { RazorpayClient } from '../src/payments/razorpay.client';
+import { createTestApp, Fixture, FIXTURE_SLOT_PRICE_MINOR, seedFixture, truncateAll } from './utils/test-app';
+
+const WEBHOOK_SECRET = 'test-webhook-secret';
+
+async function signup(app: INestApplication, email: string): Promise<{ token: string; userId: string }> {
+  const res = await request(app.getHttpServer())
+    .post('/auth/signup')
+    .send({ email, password: 'hunter2222' })
+    .expect(201);
+  return { token: res.body.accessToken as string, userId: res.body.user.id as string };
+}
+
+async function createHold(app: INestApplication, token: string, tableId: string, slotId: string): Promise<string> {
+  const res = await request(app.getHttpServer())
+    .post('/reservations/hold')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ tableId, slotId })
+    .expect(201);
+  return res.body.holdId as string;
+}
+
+async function grantMandate(
+  app: INestApplication,
+  token: string,
+  overrides: Partial<{ maxPerBookingMinor: number; maxTotalMinor: number; maxBookings: number }> = {},
+): Promise<string> {
+  const res = await request(app.getHttpServer())
+    .post('/mandates')
+    .set('Authorization', `Bearer ${token}`)
+    .send({
+      maxPerBookingMinor: FIXTURE_SLOT_PRICE_MINOR,
+      maxTotalMinor: FIXTURE_SLOT_PRICE_MINOR * 10,
+      maxBookings: 10,
+      allowedLocalities: ['Connaught Place'],
+      windowStart: '2026-01-01T00:00:00.000Z',
+      windowEnd: '2027-01-01T00:00:00.000Z',
+      ...overrides,
+    })
+    .expect(201);
+  return res.body.id as string;
+}
+
+interface OrderResponse {
+  orderId: string;
+  amountMinor: number;
+  notes: Record<string, string>;
+}
+
+async function createOrder(
+  app: INestApplication,
+  token: string,
+  body: { tableId: string; slotId: string; holdId: string; mandateId?: string; agentId?: string },
+): Promise<request.Response> {
+  return request(app.getHttpServer())
+    .post('/payments/orders')
+    .set('Authorization', `Bearer ${token}`)
+    .send(body);
+}
+
+function capturedPayload(orderId: string, paymentId: string, amount: number, notes: Record<string, string>) {
+  return {
+    entity: 'event',
+    event: 'payment.captured',
+    payload: {
+      payment: {
+        entity: {
+          id: paymentId,
+          entity: 'payment',
+          amount,
+          currency: 'INR',
+          status: 'captured',
+          order_id: orderId,
+          notes,
+        },
+      },
+    },
+  };
+}
+
+function signPayload(payload: unknown, secret: string): { raw: string; signature: string } {
+  const raw = JSON.stringify(payload);
+  const signature = createHmac('sha256', secret).update(raw).digest('hex');
+  return { raw, signature };
+}
+
+function postWebhook(app: INestApplication, raw: string, signature: string): request.Test {
+  return request(app.getHttpServer())
+    .post('/payments/webhook/razorpay')
+    .set('Content-Type', 'application/json')
+    .set('x-razorpay-signature', signature)
+    .send(raw);
+}
+
+/**
+ * Issue #8 (PRD area E): real test-mode money behind the `PAYMENT_PROVIDER`
+ * switch — order creation gated by the mandate preview, the signed webhook
+ * as the source of truth for payment, and the webhook/agent-confirm race
+ * converging on one idempotency key. `RazorpayClient` stays in its stub mode
+ * throughout (no RAZORPAY_KEY_ID/SECRET in the test env), so every call here
+ * exercises the real webhook route and the real `confirmHold` machinery
+ * without any network access to Razorpay.
+ */
+describe('Razorpay payments (e2e)', () => {
+  let app: INestApplication;
+  let fixture: Fixture;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  beforeEach(async () => {
+    process.env.PAYMENT_PROVIDER = 'razorpay';
+    await truncateAll(app);
+    fixture = await seedFixture(app);
+  });
+
+  afterAll(async () => {
+    delete process.env.PAYMENT_PROVIDER;
+    await app.close();
+  });
+
+  describe('order creation — the provider switch and the gate', () => {
+    it('refuses to create an order when the active provider is wallet, not razorpay', async () => {
+      process.env.PAYMENT_PROVIDER = 'wallet';
+      const { token } = await signup(app, 'wallet-mode@example.com');
+      const holdId = await createHold(app, token, fixture.tableId, fixture.slotId);
+
+      await createOrder(app, token, { tableId: fixture.tableId, slotId: fixture.slotId, holdId }).then((r) =>
+        expect(r.status).toBe(400),
+      );
+    });
+
+    it('creates an order carrying the required notes, priced at the slot', async () => {
+      const razorpay = app.get(RazorpayClient);
+      const before = razorpay.stubOrderCount;
+      const { token, userId } = await signup(app, 'notes-roundtrip@example.com');
+      const mandateId = await grantMandate(app, token);
+      const holdId = await createHold(app, token, fixture.tableId, fixture.slotId);
+
+      const res = await createOrder(app, token, {
+        tableId: fixture.tableId,
+        slotId: fixture.slotId,
+        holdId,
+        mandateId,
+        agentId: 'agent-123',
+      }).then((r) => r as request.Response & { body: OrderResponse });
+      expect(res.status).toBe(201);
+      expect(res.body.amountMinor).toBe(FIXTURE_SLOT_PRICE_MINOR);
+      expect(res.body.notes).toEqual({
+        mandateId,
+        agentId: 'agent-123',
+        userId,
+        holdId,
+        idempotencyKey: expect.any(String),
+      });
+      expect(razorpay.stubOrderCount).toBe(before + 1);
+    });
+
+    it('denies order creation when the mandate would refuse it, and creates no Razorpay order', async () => {
+      const razorpay = app.get(RazorpayClient);
+      const before = razorpay.stubOrderCount;
+      const { token } = await signup(app, 'notes-denied@example.com');
+      const mandateId = await grantMandate(app, token, { maxPerBookingMinor: FIXTURE_SLOT_PRICE_MINOR - 1 });
+      const holdId = await createHold(app, token, fixture.tableId, fixture.slotId);
+
+      const res = await createOrder(app, token, { tableId: fixture.tableId, slotId: fixture.slotId, holdId, mandateId });
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ verdict: 'DENY', reason: 'per_booking_ceiling_exceeded' });
+      expect(razorpay.stubOrderCount).toBe(before);
+    });
+  });
+
+  describe('webhook — signature verification and capture', () => {
+    it('rejects a wrong-secret payload before it can touch any booking state', async () => {
+      const { token } = await signup(app, 'wrong-secret@example.com');
+      const holdId = await createHold(app, token, fixture.tableId, fixture.slotId);
+      const order = await createOrder(app, token, { tableId: fixture.tableId, slotId: fixture.slotId, holdId }).then(
+        (r) => r.body as OrderResponse,
+      );
+
+      const payload = capturedPayload(order.orderId, 'pay_wrong', order.amountMinor, order.notes);
+      const { raw } = signPayload(payload, WEBHOOK_SECRET);
+      const wrongSignature = createHmac('sha256', 'not-the-real-secret').update(raw).digest('hex');
+
+      await postWebhook(app, raw, wrongSignature).expect(401);
+
+      const reservationRepo = app.get(DataSource).getRepository(Reservation);
+      expect(await reservationRepo.count()).toBe(0);
+    });
+
+    it('a correctly signed payment.captured event commits the booking and records the payment id', async () => {
+      const { token } = await signup(app, 'captured@example.com');
+      const holdId = await createHold(app, token, fixture.tableId, fixture.slotId);
+      const order = await createOrder(app, token, { tableId: fixture.tableId, slotId: fixture.slotId, holdId }).then(
+        (r) => r.body as OrderResponse,
+      );
+
+      const payload = capturedPayload(order.orderId, 'pay_captured_1', order.amountMinor, order.notes);
+      const { raw, signature } = signPayload(payload, WEBHOOK_SECRET);
+
+      await postWebhook(app, raw, signature).expect(200);
+
+      const reservationRepo = app.get(DataSource).getRepository(Reservation);
+      expect(await reservationRepo.count()).toBe(1);
+      const paymentRepo = app.get(DataSource).getRepository(Payment);
+      const payment = await paymentRepo.findOneByOrFail({ reservationId: (await reservationRepo.find())[0].id });
+      expect(payment.razorpayPaymentId).toBe('pay_captured_1');
+      expect(payment.amount).toBe(FIXTURE_SLOT_PRICE_MINOR);
+    });
+
+    it('the same captured event redelivered books exactly once', async () => {
+      const { token } = await signup(app, 'redelivered@example.com');
+      const holdId = await createHold(app, token, fixture.tableId, fixture.slotId);
+      const order = await createOrder(app, token, { tableId: fixture.tableId, slotId: fixture.slotId, holdId }).then(
+        (r) => r.body as OrderResponse,
+      );
+
+      const payload = capturedPayload(order.orderId, 'pay_redelivered', order.amountMinor, order.notes);
+      const { raw, signature } = signPayload(payload, WEBHOOK_SECRET);
+
+      await postWebhook(app, raw, signature).expect(200);
+      await postWebhook(app, raw, signature).expect(200);
+
+      const reservationRepo = app.get(DataSource).getRepository(Reservation);
+      expect(await reservationRepo.count()).toBe(1);
+      const paymentRepo = app.get(DataSource).getRepository(Payment);
+      expect(await paymentRepo.count()).toBe(1);
+      const payment = (await paymentRepo.find())[0];
+      expect(payment.razorpayPaymentId).toBe('pay_redelivered');
+    });
+  });
+
+  describe('webhook vs. the agent/user\'s own confirm — racing on one idempotency key', () => {
+    it('produces exactly one booking no matter which arrives first', async () => {
+      const { token } = await signup(app, 'race@example.com');
+      const holdId = await createHold(app, token, fixture.tableId, fixture.slotId);
+      const order = await createOrder(app, token, { tableId: fixture.tableId, slotId: fixture.slotId, holdId }).then(
+        (r) => r.body as OrderResponse,
+      );
+
+      const payload = capturedPayload(order.orderId, 'pay_race', order.amountMinor, order.notes);
+      const { raw, signature } = signPayload(payload, WEBHOOK_SECRET);
+
+      const webhookCall = postWebhook(app, raw, signature);
+      const confirmCall = request(app.getHttpServer())
+        .post('/reservations/confirm')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', order.notes.idempotencyKey)
+        .send({ holdId, tableId: fixture.tableId, slotId: fixture.slotId });
+
+      const [webhookRes, confirmRes] = await Promise.all([webhookCall, confirmCall]);
+
+      expect([200, 409]).toContain(webhookRes.status);
+      expect([201, 409]).toContain(confirmRes.status);
+
+      const reservationRepo = app.get(DataSource).getRepository(Reservation);
+      expect(await reservationRepo.count()).toBe(1);
+      const paymentRepo = app.get(DataSource).getRepository(Payment);
+      expect(await paymentRepo.count()).toBe(1);
+    });
+  });
+});
