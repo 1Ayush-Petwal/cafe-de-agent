@@ -10,6 +10,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { paymentProvider } from '../config/payment-provider';
+import { DecisionLogService } from '../decisions/decision-log.service';
+import { AgentDecisionStep } from '../entities/agent-decision-step.enum';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { Payment } from '../entities/payment.entity';
 import { Slot } from '../entities/slot.entity';
@@ -38,10 +40,25 @@ export interface RazorpayWebhookBody {
     payment?: {
       entity?: {
         id?: string;
+        amount?: number;
         notes?: Record<string, string>;
       };
     };
   };
+}
+
+/** Extracts a human/decision-log-readable reason from whatever `confirmHold` threw. */
+function failureReason(err: unknown): string {
+  if (err instanceof HttpException) {
+    const response = err.getResponse();
+    if (typeof response === 'object' && response !== null) {
+      const body = response as Record<string, unknown>;
+      if (typeof body.reason === 'string') return body.reason;
+      if (typeof body.message === 'string') return body.message;
+    }
+    return err.message;
+  }
+  return err instanceof Error ? err.message : 'Unknown confirm failure';
 }
 
 /**
@@ -62,6 +79,7 @@ export class PaymentsService {
     private readonly mandates: MandatesService,
     private readonly holds: HoldsService,
     private readonly reservations: ReservationsService,
+    private readonly decisionLog: DecisionLogService,
   ) {}
 
   /**
@@ -167,7 +185,14 @@ export class PaymentsService {
       ...(notes.mandateId ? { mandateId: notes.mandateId } : {}),
     };
 
-    const reservation = await this.reservations.confirmHold(meta.userId, dto, idempotencyKey);
+    const start = Date.now();
+    let reservation: Awaited<ReturnType<ReservationsService['confirmHold']>>;
+    try {
+      reservation = await this.reservations.confirmHold(meta.userId, dto, idempotencyKey);
+    } catch (err) {
+      await this.compensate(err, entity, notes, dto, Date.now() - start);
+      return { received: true };
+    }
 
     if (entity.id) {
       // Idempotent by construction: a redelivered event lands on the same
@@ -181,5 +206,66 @@ export class PaymentsService {
     }
 
     return { received: true };
+  }
+
+  /**
+   * Issue #9 (PRD area E): a capture already happened at Razorpay by the
+   * time this webhook fires, so a confirm that fails here (a mandate
+   * exhausted in the gap, a slot taken in the gap, ...) can't be retried —
+   * the hold is already consumed and the failure is the same on any replay.
+   * Refund-only, matching `confirmHold`'s own contract that a failed
+   * confirm leaves no reservation and no payment row behind.
+   *
+   * Crash window, disclosed rather than hidden: if the process dies between
+   * `confirmHold`'s transaction rolling back (above) and the refund call
+   * below completing, the captured payment is stranded with no durable
+   * record — the Payment row rolled back with everything else
+   * `writeBookingAndCharge` wrote. The upgrade path, deliberately deferred:
+   * write the Payment row as `CAPTURED` *before* confirm ever runs, then
+   * reclaim stranded `CAPTURED` rows with a background sweeper — the same
+   * `SELECT ... FOR UPDATE SKIP LOCKED` pattern
+   * `notifications/outbox-worker.service.ts` already uses.
+   */
+  private async compensate(
+    err: unknown,
+    entity: { id?: string; amount?: number },
+    notes: Record<string, string>,
+    dto: ConfirmHoldDto,
+    latencyMs: number,
+  ): Promise<void> {
+    const reason = failureReason(err);
+
+    if (entity.id && entity.amount != null) {
+      await this.razorpay.refund(entity.id, entity.amount);
+    }
+
+    // The decision log is mandate-scoped (issue #6) — a compensation with no
+    // mandate involved (e.g. a slot taken in the gap on a direct order) has
+    // nothing to log against, but the refund above still ran.
+    if (!notes.mandateId) {
+      return;
+    }
+
+    const table = await this.tables.findOne({ where: { id: dto.tableId }, relations: { cafe: true } });
+    const slot = await this.slots.findOne({ where: { id: dto.slotId } });
+    if (!table || !slot) {
+      return;
+    }
+
+    await this.decisionLog.record(undefined, {
+      mandateId: notes.mandateId,
+      step: AgentDecisionStep.COMPENSATE,
+      verdict: 'DENY',
+      denyReason: reason,
+      requestedAction: {
+        amountMinor: slot.priceMinor,
+        locality: table.cafe.area,
+        slotTime: slot.slotTime.toISOString(),
+      },
+      constraintsSnap: await this.mandates.getConstraintsSnapshot(notes.mandateId),
+      latencyMs,
+      holdId: dto.holdId,
+      idempotencyKey: notes.idempotencyKey ?? null,
+    });
   }
 }

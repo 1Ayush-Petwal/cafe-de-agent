@@ -25,10 +25,16 @@ export class RazorpayClient {
   private readonly keySecret = process.env.RAZORPAY_KEY_SECRET;
   private readonly live = Boolean(this.keyId && this.keySecret);
   private readonly stubOrders = new Map<string, RazorpayOrder>();
+  private readonly stubRefundLog: { paymentId: string; amountMinor: number }[] = [];
 
   /** Test-only introspection: how many orders this stub has created. */
   get stubOrderCount(): number {
     return this.stubOrders.size;
+  }
+
+  /** Test-only introspection: every refund this stub has issued, in order. */
+  get stubRefunds(): readonly { paymentId: string; amountMinor: number }[] {
+    return this.stubRefundLog;
   }
 
   private liveHeaders(): Record<string, string> {
@@ -63,9 +69,10 @@ export class RazorpayClient {
     return (await res.json()) as RazorpayOrder;
   }
 
-  /** Not wired into a compensation flow by this issue (#8's acceptance criteria don't call for one) — exposed because the PRD names it as one of the two client methods. */
+  /** Issue #9 (PRD area E): wired into the confirm-failure compensation path in PaymentsService. */
   async refund(paymentId: string, amountMinor: number): Promise<void> {
     if (!this.live) {
+      this.stubRefundLog.push({ paymentId, amountMinor });
       return;
     }
     const res = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/refund`, {

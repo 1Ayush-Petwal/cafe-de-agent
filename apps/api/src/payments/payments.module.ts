@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DecisionsModule } from '../decisions/decisions.module';
 import { CafeTable } from '../entities/cafe-table.entity';
 import { Payment } from '../entities/payment.entity';
 import { Slot } from '../entities/slot.entity';
@@ -11,7 +12,13 @@ import { PaymentsService } from './payments.service';
 import { RazorpayClient } from './razorpay.client';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([CafeTable, Slot, Payment]), HoldsModule, MandatesModule, ReservationsModule],
+  imports: [
+    TypeOrmModule.forFeature([CafeTable, Slot, Payment]),
+    HoldsModule,
+    MandatesModule,
+    ReservationsModule,
+    DecisionsModule,
+  ],
   controllers: [PaymentsController],
   providers: [PaymentsService, RazorpayClient],
   exports: [RazorpayClient],

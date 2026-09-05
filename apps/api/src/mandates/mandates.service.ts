@@ -215,6 +215,19 @@ export class MandatesService {
     await this.findOwned(userId, mandateId);
   }
 
+  /**
+   * Issue #9 (PRD area E): the compensate step logs a decision after the
+   * booking transaction that would have carried `gate.snapshot` has already
+   * rolled back, so there is no snapshot to reuse — this re-reads the
+   * mandate's current state for the log row instead. No ownership check:
+   * the only caller is the webhook handler, which has no user request to
+   * check ownership against.
+   */
+  async getConstraintsSnapshot(mandateId: string): Promise<MandateConstraintsSnapshot> {
+    const mandate = await this.mandates.findOneOrFail({ where: { id: mandateId } });
+    return snapshotConstraints(mandate);
+  }
+
   private async findOwned(userId: string, mandateId: string): Promise<Mandate> {
     const mandate = await this.mandates.findOne({ where: { id: mandateId } });
     if (!mandate) throw new NotFoundException('Mandate not found');
