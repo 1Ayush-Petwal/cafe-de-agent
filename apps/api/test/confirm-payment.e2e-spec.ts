@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import request from 'supertest';
 import { Payment } from '../src/entities/payment.entity';
 import { User } from '../src/entities/user.entity';
+import { WALLET_SIGNUP_BALANCE } from '../src/entities/wallet.constants';
 import { createTestApp, Fixture, FIXTURE_SLOT_PRICE_MINOR, seedFixture, truncateAll } from './utils/test-app';
 
 async function signup(app: INestApplication, email: string): Promise<{ token: string; userId: string }> {
@@ -65,7 +66,7 @@ describe('Confirm charges the wallet (e2e)', () => {
 
     const userRepo = app.get(DataSource).getRepository(User);
     const user = await userRepo.findOneByOrFail({ id: userId });
-    expect(user.walletBalance).toBe(50000 - FIXTURE_SLOT_PRICE_MINOR);
+    expect(user.walletBalance).toBe(WALLET_SIGNUP_BALANCE - FIXTURE_SLOT_PRICE_MINOR);
   });
 
   it('fails cleanly with 402 when the balance is too low: no reservation, no payment, hold released', async () => {

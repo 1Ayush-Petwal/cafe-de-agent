@@ -14,7 +14,9 @@ Scoped to one region (Delhi) on purpose, so the café list is curated and the av
 - Browse cafés in your region, search by locality, sort by distance or rating.
 - See live availability per café — the grid updates itself as other people book.
 - Hold a table while you decide (holds expire on their own, so nothing gets
-stuck), then confirm. ₹25 comes out of an in-app wallet you start with ₹500 in.
+stuck), then confirm. The slot's own price comes out of an in-app wallet you
+start with ₹2000 in — slots are priced per hour and day, so a Saturday dinner
+table costs more than a Tuesday afternoon one.
 - Book in natural language via the agent, which asks you before it spends money.
 - See and cancel your bookings; get a notification when one is confirmed.
 
