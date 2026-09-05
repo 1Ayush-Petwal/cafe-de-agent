@@ -1,10 +1,14 @@
-import { Controller, Get, MessageEvent, Param, Query, Sse } from '@nestjs/common';
+import { Controller, Get, MessageEvent, Param, Query, Sse, UseGuards } from '@nestjs/common';
 import { Observable } from 'rxjs';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtPayload } from '../auth/jwt.strategy';
 import { Cafe } from '../entities/cafe.entity';
 import { AvailabilityEventsService } from '../realtime/availability-events.service';
+import { AlternativesQueryDto } from './dto/alternatives-query.dto';
 import { AvailabilityQueryDto } from './dto/availability-query.dto';
 import { ListCafesQueryDto } from './dto/list-cafes-query.dto';
-import { CafesService, TableAvailability } from './cafes.service';
+import { AlternativeSlot, CafesService, TableAvailability } from './cafes.service';
 
 @Controller('cafes')
 export class CafesController {
@@ -24,6 +28,27 @@ export class CafesController {
     @Query() query: AvailabilityQueryDto,
   ): Promise<TableAvailability[]> {
     return this.cafes.getAvailability(id, query.date);
+  }
+
+  /**
+   * Issue #10 (PRD area F): up to two alternative table+slot candidates,
+   * cold-and-available ones preferred, mandate-screened when `mandateId` is
+   * given. Authenticated — unlike plain availability, screening against a
+   * mandate needs to know whose mandate it is.
+   */
+  @Get(':id/alternatives')
+  @UseGuards(JwtAuthGuard)
+  findAlternatives(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Query() query: AlternativesQueryDto,
+  ): Promise<AlternativeSlot[]> {
+    return this.cafes.findAlternatives(id, {
+      date: query.date,
+      excludeSlotId: query.excludeSlotId,
+      mandateId: query.mandateId,
+      userId: user.sub,
+    });
   }
 
   /**

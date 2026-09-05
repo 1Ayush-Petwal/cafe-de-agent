@@ -21,7 +21,7 @@ function hourMultiplier(hourUtc: number): number {
   return OFF_PEAK_MULTIPLIER;
 }
 
-function isWeekend(dayUtc: number): boolean {
+export function isWeekend(dayUtc: number): boolean {
   return dayUtc === 5 || dayUtc === 6; // Friday, Saturday
 }
 

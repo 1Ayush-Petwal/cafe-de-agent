@@ -68,6 +68,23 @@ export class AgentToolsService {
       },
     },
     {
+      name: 'propose_alternatives',
+      description:
+        'When the requested table/slot is unavailable, or check_availability shows a cold slot inside the ' +
+        "customer's window, get up to two alternative table+slot options for a café on a date. Each one is " +
+        'already discounted if cold, and — when this conversation has a mandate attached — already screened so ' +
+        "the mandate wouldn't refuse it.",
+      parameters: {
+        type: 'object',
+        properties: {
+          cafeId: { type: 'string', description: 'The café id, from search_cafes.' },
+          date: { type: 'string', description: 'ISO date, e.g. 2026-08-01.' },
+          excludeSlotId: { type: 'string', description: 'The slot the customer actually asked for, if any.' },
+        },
+        required: ['cafeId', 'date'],
+      },
+    },
+    {
       name: 'get_mandate_status',
       description:
         "Read this conversation's own mandate: remaining budget, remaining bookings and expiry. Only useful when " +
@@ -106,6 +123,8 @@ export class AgentToolsService {
         return this.call('GET', '/cafes', token);
       case 'check_availability':
         return this.call('GET', `/cafes/${args.cafeId}/availability?date=${args.date}`, token);
+      case 'propose_alternatives':
+        return this.proposeAlternatives(args, token, mandateId);
       case 'hold_table':
         return this.call('POST', '/reservations/hold', token, { tableId: args.tableId, slotId: args.slotId });
       case 'confirm_hold':
@@ -118,6 +137,28 @@ export class AgentToolsService {
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
+  }
+
+  /**
+   * Issue #10 (PRD area F): threads the conversation's own mandate through
+   * as a query param so the alternatives endpoint can screen every
+   * candidate through `previewMandate` before it ever reaches the model —
+   * an alternative the mandate would refuse should never be proposed in the
+   * first place, not proposed and then denied.
+   */
+  private async proposeAlternatives(
+    args: Record<string, unknown>,
+    token: string,
+    mandateId?: string,
+  ): Promise<Record<string, unknown>> {
+    const params = new URLSearchParams({ date: String(args.date) });
+    if (args.excludeSlotId) {
+      params.set('excludeSlotId', String(args.excludeSlotId));
+    }
+    if (mandateId) {
+      params.set('mandateId', mandateId);
+    }
+    return this.call('GET', `/cafes/${args.cafeId}/alternatives?${params.toString()}`, token);
   }
 
   /**
