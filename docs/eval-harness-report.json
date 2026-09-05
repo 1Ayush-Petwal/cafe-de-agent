@@ -1,0 +1,49 @@
+{
+  "generatedAt": "2026-09-05T15:57:00.513Z",
+  "seed": 20260905,
+  "intentCount": 30,
+  "arms": {
+    "baseline": {
+      "slotFillRate": 0.8,
+      "grossRevenueMinor": 904000,
+      "revenuePerSlotMinor": 37667,
+      "mandateDenials": {
+        "total": 0,
+        "byReason": {}
+      },
+      "platformDenials": {
+        "total": 4,
+        "byReason": {
+          "slot_unavailable": 4
+        }
+      },
+      "overRefusalRate": 0,
+      "compensations": {
+        "ok": 2,
+        "failed": 0
+      }
+    },
+    "agent": {
+      "slotFillRate": 0.8333333333333334,
+      "grossRevenueMinor": 944000,
+      "revenuePerSlotMinor": 37760,
+      "mandateDenials": {
+        "total": 4,
+        "byReason": {
+          "window_mismatch": 2,
+          "locality_mismatch": 2
+        }
+      },
+      "platformDenials": {
+        "total": 0,
+        "byReason": {}
+      },
+      "overRefusalRate": 0.13333333333333333,
+      "compensations": {
+        "ok": 1,
+        "failed": 0
+      }
+    }
+  },
+  "doubleBookings": 0
+}

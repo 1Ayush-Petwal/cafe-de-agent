@@ -6,9 +6,8 @@ import { Payment } from '../src/entities/payment.entity';
 import { Reservation } from '../src/entities/reservation.entity';
 import { Slot } from '../src/entities/slot.entity';
 import { RazorpayClient } from '../src/payments/razorpay.client';
+import { capturedPayload, postWebhook, signPayload, WEBHOOK_SECRET } from './utils/razorpay-webhook';
 import { createTestApp, Fixture, FIXTURE_SLOT_PRICE_MINOR, seedFixture, truncateAll } from './utils/test-app';
-
-const WEBHOOK_SECRET = 'test-webhook-secret';
 
 async function signup(app: INestApplication, email: string): Promise<{ token: string; userId: string }> {
   const res = await request(app.getHttpServer())
@@ -63,40 +62,6 @@ async function createOrder(
     .post('/payments/orders')
     .set('Authorization', `Bearer ${token}`)
     .send(body);
-}
-
-function capturedPayload(orderId: string, paymentId: string, amount: number, notes: Record<string, string>) {
-  return {
-    entity: 'event',
-    event: 'payment.captured',
-    payload: {
-      payment: {
-        entity: {
-          id: paymentId,
-          entity: 'payment',
-          amount,
-          currency: 'INR',
-          status: 'captured',
-          order_id: orderId,
-          notes,
-        },
-      },
-    },
-  };
-}
-
-function signPayload(payload: unknown, secret: string): { raw: string; signature: string } {
-  const raw = JSON.stringify(payload);
-  const signature = createHmac('sha256', secret).update(raw).digest('hex');
-  return { raw, signature };
-}
-
-function postWebhook(app: INestApplication, raw: string, signature: string): request.Test {
-  return request(app.getHttpServer())
-    .post('/payments/webhook/razorpay')
-    .set('Content-Type', 'application/json')
-    .set('x-razorpay-signature', signature)
-    .send(raw);
 }
 
 /**
