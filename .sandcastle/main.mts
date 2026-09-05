@@ -43,6 +43,12 @@ const planSchema = z.object({
 // Raise this if your backlog is large; lower it for a quick smoke-test run.
 const MAX_ITERATIONS = 10;
 
+// Each issue gets its own Docker sandbox running npm install, Postgres and
+// Redis. Six at once exhausted this machine's memory and the OS killed the
+// run mid-flight; the outer loop picks up the rest next iteration anyway.
+// ponytail: a fixed cap, not a memory-aware scheduler - raise it on a bigger box.
+const MAX_PARALLEL = 2;
+
 // Hooks run inside the sandbox before the agent starts each iteration.
 // npm install ensures the sandbox always has fresh dependencies; the second
 // command brings up this sandbox's own Postgres and Redis, so `npm run test:ci`
@@ -80,7 +86,11 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // It outputs a <plan> JSON block — Output.object parses and validates it.
   // -------------------------------------------------------------------------
   const plan = await sandcastle.run({
-    hooks,
+    // No hooks: the planner and merger run against the main checkout, which is
+    // bind-mounted from the host. Their `npm install` overwrote the host's
+    // node_modules with Linux binaries, so bcrypt failed to dlopen on macOS
+    // and every suite died with "invalid ELF header". Neither phase needs
+    // dependencies - one reads issues, the other merges branches.
     sandbox: docker(),
     name: "planner",
     // One iteration is enough: the planner just needs to read and reason,
@@ -95,7 +105,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     output: sandcastle.Output.object({ tag: "plan", schema: planSchema }),
   });
 
-  const issues = plan.output.issues;
+  const issues = plan.output.issues.slice(0, MAX_PARALLEL);
 
   if (issues.length === 0) {
     // No unblocked work — either everything is done or everything is blocked.
@@ -104,7 +114,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   }
 
   console.log(
-    `Planning complete. ${issues.length} issue(s) to work in parallel:`,
+    `Planning complete. ${issues.length} of ${plan.output.issues.length} unblocked issue(s) this round:`,
   );
   for (const issue of issues) {
     console.log(`  ${issue.id}: ${issue.title} → ${issue.branch}`);
@@ -215,7 +225,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // uses to know which branches to merge and which issues to close.
   // -------------------------------------------------------------------------
   await sandcastle.run({
-    hooks,
+    // No hooks - see the planner above.
     sandbox: docker(),
     name: "merger",
     maxIterations: 1,
