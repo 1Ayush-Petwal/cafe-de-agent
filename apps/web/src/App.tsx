@@ -1,10 +1,11 @@
-import { Navigate, NavLink, Route, Routes, Link } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, Route, Routes, Link } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
 import { formatRupees } from './money';
 import { OfflineBanner } from './OfflineBanner';
 import { AgentChatPage } from './pages/AgentChatPage';
 import { CafeAvailabilityPage } from './pages/CafeAvailabilityPage';
 import { CafeListPage } from './pages/CafeListPage';
+import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { MandatePage } from './pages/MandatePage';
 import { MyReservationsPage } from './pages/MyReservationsPage';
@@ -23,14 +24,15 @@ function RequireOwner({ children }: { children: JSX.Element }) {
   return user?.role === 'owner' ? children : <Navigate to="/cafes" replace />;
 }
 
-export function App() {
+/** The 960px shell with the app nav. The landing page at `/` sits outside it. */
+function AppShell() {
   const { isAuthenticated, user, logout } = useAuth();
 
   return (
     <div className="app">
       <OfflineBanner />
       <nav>
-        <Link to="/cafes" className="nav-brand">
+        <Link to="/" className="nav-brand">
           Café De
         </Link>
         <div className="nav-links">
@@ -60,46 +62,62 @@ export function App() {
         </div>
       </nav>
       <main>
-        <Routes>
-          <Route path="/" element={<Navigate to="/cafes" replace />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/cafes" element={<CafeListPage />} />
-          <Route path="/cafes/:cafeId" element={<CafeAvailabilityPage />} />
-          <Route
-            path="/reservations"
-            element={
-              <RequireAuth>
-                <MyReservationsPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/agent"
-            element={
-              <RequireAuth>
-                <AgentChatPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/mandate"
-            element={
-              <RequireAuth>
-                <MandatePage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/owner"
-            element={
-              <RequireOwner>
-                <OwnerDashboardPage />
-              </RequireOwner>
-            }
-          />
-        </Routes>
+        <Outlet />
       </main>
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <>
+            <OfflineBanner />
+            <LandingPage />
+          </>
+        }
+      />
+      <Route element={<AppShell />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/cafes" element={<CafeListPage />} />
+        <Route path="/cafes/:cafeId" element={<CafeAvailabilityPage />} />
+        <Route
+          path="/reservations"
+          element={
+            <RequireAuth>
+              <MyReservationsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/agent"
+          element={
+            <RequireAuth>
+              <AgentChatPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/mandate"
+          element={
+            <RequireAuth>
+              <MandatePage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/owner"
+          element={
+            <RequireOwner>
+              <OwnerDashboardPage />
+            </RequireOwner>
+          }
+        />
+      </Route>
+    </Routes>
   );
 }
